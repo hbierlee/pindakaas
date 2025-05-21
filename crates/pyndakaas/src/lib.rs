@@ -229,6 +229,10 @@ mod pindakaas {
 			res
 		}
 
+		fn __radd__(&self, other: i64) -> BoolLinExp {
+			self.__add__(BoolLinArg::Int(other))
+		}
+
 		fn __eq__(&self, other: i64) -> BoolLinCon {
 			BoolLinCon(BaseBoolLinCon::new(
 				self.0.clone(),
@@ -449,6 +453,10 @@ mod pindakaas {
 		}
 
 		fn __mul__(&self, other: i64) -> BoolLinExp {
+			self.as_bool_lin_exp().__mul__(other)
+		}
+
+		fn __rmul__(&self, other: i64) -> BoolLinExp {
 			self.as_bool_lin_exp().__mul__(other)
 		}
 

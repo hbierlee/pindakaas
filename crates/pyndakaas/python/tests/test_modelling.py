@@ -6,6 +6,8 @@ def test_bool_lin():
     x, y, z = f.new_vars(3)
     assert str(x + 2) == "x₁ + 2"
     assert str(2 + x) == "x₁ + 2"
+    assert str(x * 2) == "2*x₁"
+    assert str(2 * x) == "2*x₁"
     c = x + y - z + 2
     assert str(c) == "-x₃ + x₂ + x₁ + 2"
     c = sum([x, y, z])
