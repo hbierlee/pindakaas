@@ -33,7 +33,9 @@ use std::{
 	slice,
 };
 
+use cardinality_one::CardinalityOne;
 use itertools::{traits::HomogeneousTuple, Itertools};
+use pigeons::{ConstraintLike, Proof, VarLike};
 
 pub use crate::helpers::AsDynClauseDatabase;
 use crate::{
@@ -253,6 +255,13 @@ pub trait Encoder<DB: ClauseDatabase + ?Sized, Constraint: ?Sized> {
 	fn encode(&self, db: &mut DB, con: &Constraint) -> Result;
 }
 
+/// CertEncoder is the central trait implemented for all the certified encoding algorithms
+pub trait CertEncoder<DB: ClauseDatabase + ?Sized, Constraint: ?Sized, W: std::io::Write>:
+	Encoder<DB, Constraint>
+{
+	fn encode_cert(&self, db: &mut DB, con: &Constraint, proof: &mut Proof<W>) -> Result;
+}
+
 /// IntEncoding is a enumerated type use to represent Boolean encodings of
 /// integer variables within this library
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -277,6 +286,20 @@ pub enum IntEncoding<'a> {
 /// Literal is type that can be use to represent Boolean decision variables and
 /// their negations
 pub struct Lit(NonZeroI32);
+
+impl VarLike for Lit {
+	type Formatter = Self;
+}
+
+impl ConstraintLike<Lit> for CardinalityOne {
+	fn rhs(&self) -> isize {
+		1
+	}
+
+	fn sum_iter(&self) -> impl Iterator<Item = (isize, pigeons::Axiom<Lit>)> {
+		self.lits.iter().map(|l| (1, l.pos_axiom()))
+	}
+}
 
 /// Result is a type alias for [`std::result::Result`] that by default returns
 /// an empty value, or the [`Unsatisfiable`] error type.

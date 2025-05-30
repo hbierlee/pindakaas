@@ -27,6 +27,8 @@ pindakaas-derive = { path = "../pindakaas-derive", optional = true }
 pindakaas-intel-sat = { path = "../pindakaas-intel-sat", optional = true }
 pindakaas-kissat = { path = "../pindakaas-kissat", optional = true }
 splr = { version = "0.17", optional = true }
+pigeons = "0.1.1"
+tempfile = "3.20.0"
 
 [dev-dependencies]
 expect-test = "1.5.0"

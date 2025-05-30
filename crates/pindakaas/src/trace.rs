@@ -79,7 +79,7 @@ pub(crate) fn subscripted_name(name: &str, sub: usize) -> String {
 }
 
 pub(crate) fn trace_print_lit(l: &Lit) -> String {
-	format!("{}{{{:?}}}", if l.is_negated() { "¬" } else { "" }, l.var())
+	format!("{}{{{}}}", if l.is_negated() { "¬" } else { "" }, l.var())
 }
 
 impl EventVisitor {
