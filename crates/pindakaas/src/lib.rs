@@ -438,18 +438,6 @@ fn parse_dimacs_file<const WEIGHTED: bool>(path: &Path) -> Result<Dimacs, io::Er
 	}
 }
 
-impl BitAnd<bool> for BoolVal {
-	type Output = BoolVal;
-
-	fn bitand(self, rhs: bool) -> Self::Output {
-		match self {
-			BoolVal::Const(b) => (b & rhs).into(),
-			BoolVal::Lit(l) if rhs => (l).into(),
-			BoolVal::Lit(_) => false.into(),
-		}
-	}
-}
-
 impl BitAnd<BoolVal> for BoolVal {
 	type Output = Formula<BoolVal>;
 
@@ -472,14 +460,14 @@ impl BitAnd<Lit> for BoolVal {
 	}
 }
 
-impl BitOr<bool> for BoolVal {
+impl BitAnd<bool> for BoolVal {
 	type Output = BoolVal;
 
-	fn bitor(self, rhs: bool) -> Self::Output {
+	fn bitand(self, rhs: bool) -> Self::Output {
 		match self {
-			BoolVal::Const(b) => (b | rhs).into(),
-			BoolVal::Lit(_) if rhs => true.into(),
-			BoolVal::Lit(_) => self,
+			BoolVal::Const(b) => (b & rhs).into(),
+			BoolVal::Lit(l) if rhs => (l).into(),
+			BoolVal::Lit(_) => false.into(),
 		}
 	}
 }
@@ -506,14 +494,14 @@ impl BitOr<Lit> for BoolVal {
 	}
 }
 
-impl BitXor<bool> for BoolVal {
+impl BitOr<bool> for BoolVal {
 	type Output = BoolVal;
 
-	fn bitxor(self, rhs: bool) -> Self::Output {
-		if rhs {
-			!self
-		} else {
-			self
+	fn bitor(self, rhs: bool) -> Self::Output {
+		match self {
+			BoolVal::Const(b) => (b | rhs).into(),
+			BoolVal::Lit(_) if rhs => true.into(),
+			BoolVal::Lit(_) => self,
 		}
 	}
 }
@@ -542,18 +530,24 @@ impl BitXor<Lit> for BoolVal {
 	}
 }
 
+impl BitXor<bool> for BoolVal {
+	type Output = BoolVal;
+
+	fn bitxor(self, rhs: bool) -> Self::Output {
+		if rhs {
+			!self
+		} else {
+			self
+		}
+	}
+}
+
 impl Display for BoolVal {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			BoolVal::Const(b) => write!(f, "{b}"),
 			BoolVal::Lit(l) => write!(f, "{l}"),
 		}
-	}
-}
-
-impl From<bool> for BoolVal {
-	fn from(value: bool) -> Self {
-		BoolVal::Const(value)
 	}
 }
 
@@ -569,6 +563,12 @@ impl From<Var> for BoolVal {
 	}
 }
 
+impl From<bool> for BoolVal {
+	fn from(value: bool) -> Self {
+		BoolVal::Const(value)
+	}
+}
+
 impl Not for BoolVal {
 	type Output = BoolVal;
 
@@ -581,11 +581,6 @@ impl Not for BoolVal {
 }
 
 impl Cnf {
-	/// Returns the number of clauses in the formula.
-	pub fn num_clauses(&self) -> usize {
-		self.size.len()
-	}
-
 	/// Read a CNF formula from a file formatted in the DIMACS CNF format
 	pub fn from_file(path: &Path) -> Result<Self, io::Error> {
 		match parse_dimacs_file::<false>(path)? {
@@ -614,6 +609,10 @@ impl Cnf {
 	/// Returns the number of literals in the formula.
 	pub fn literals(&self) -> usize {
 		self.size.iter().sum()
+	}
+	/// Returns the number of clauses in the formula.
+	pub fn num_clauses(&self) -> usize {
+		self.size.len()
 	}
 
 	/// Store CNF formula at given path in DIMACS format
@@ -757,29 +756,6 @@ impl Add<Coeff> for Lit {
 	}
 }
 
-impl Display for Lit {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(
-			f,
-			"{}{}",
-			if self.is_negated() { "¬" } else { "" },
-			self.var()
-		)
-	}
-}
-
-impl BitAnd<bool> for Lit {
-	type Output = BoolVal;
-
-	fn bitand(self, rhs: bool) -> Self::Output {
-		if rhs {
-			self.into()
-		} else {
-			false.into()
-		}
-	}
-}
-
 impl BitAnd<BoolVal> for Lit {
 	type Output = Formula<BoolVal>;
 
@@ -796,14 +772,14 @@ impl BitAnd<Lit> for Lit {
 	}
 }
 
-impl BitOr<bool> for Lit {
+impl BitAnd<bool> for Lit {
 	type Output = BoolVal;
 
-	fn bitor(self, rhs: bool) -> Self::Output {
+	fn bitand(self, rhs: bool) -> Self::Output {
 		if rhs {
-			true.into()
-		} else {
 			self.into()
+		} else {
+			false.into()
 		}
 	}
 }
@@ -824,14 +800,14 @@ impl BitOr<Lit> for Lit {
 	}
 }
 
-impl BitXor<bool> for Lit {
-	type Output = Lit;
+impl BitOr<bool> for Lit {
+	type Output = BoolVal;
 
-	fn bitxor(self, rhs: bool) -> Self::Output {
+	fn bitor(self, rhs: bool) -> Self::Output {
 		if rhs {
-			!self
+			true.into()
 		} else {
-			self
+			self.into()
 		}
 	}
 }
@@ -849,6 +825,29 @@ impl BitXor<Lit> for Lit {
 
 	fn bitxor(self, rhs: Lit) -> Self::Output {
 		Formula::Xor(vec![Formula::Atom(self), Formula::Atom(rhs)])
+	}
+}
+
+impl BitXor<bool> for Lit {
+	type Output = Lit;
+
+	fn bitxor(self, rhs: bool) -> Self::Output {
+		if rhs {
+			!self
+		} else {
+			self
+		}
+	}
+}
+
+impl Display for Lit {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(
+			f,
+			"{}{}",
+			if self.is_negated() { "¬" } else { "" },
+			self.var()
+		)
 	}
 }
 
@@ -1202,7 +1201,7 @@ mod tests {
 	use crate::{solver::VarFactory, Lit, Var};
 
 	#[test]
-	fn test_var_range() {
+	fn var_range() {
 		let mut factory = VarFactory::default();
 
 		let range = factory.next_var_range(0);

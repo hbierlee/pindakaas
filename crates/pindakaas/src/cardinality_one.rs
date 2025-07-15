@@ -267,7 +267,7 @@ pub(crate) mod tests {
 				const LARGE_N: usize = 50;
 				// ------ At Most One testing ------
 				#[test]
-				fn test_amo_pair() {
+				fn amo_pair() {
 					let mut cnf = Cnf::default();
 					let a = cnf.new_lit();
 					let b = cnf.new_lit();
@@ -288,7 +288,7 @@ pub(crate) mod tests {
 					);
 				}
 				#[test]
-				fn test_amo_one_neg() {
+				fn amo_one_neg() {
 					let mut cnf = Cnf::default();
 					let a = cnf.new_lit();
 					let b = cnf.new_lit();
@@ -309,7 +309,7 @@ pub(crate) mod tests {
 					);
 				}
 				#[test]
-				fn test_amo_neg_only() {
+				fn amo_neg_only() {
 					let mut cnf = Cnf::default();
 					let a = cnf.new_lit();
 					let b = cnf.new_lit();
@@ -330,7 +330,7 @@ pub(crate) mod tests {
 					);
 				}
 				#[test]
-				fn test_amo_triple() {
+				fn amo_triple() {
 					let mut cnf = Cnf::default();
 					let a = cnf.new_lit();
 					let b = cnf.new_lit();
@@ -352,7 +352,7 @@ pub(crate) mod tests {
 					);
 				}
 				#[test]
-				fn test_amo_large() {
+				fn amo_large() {
 					let mut cnf = Cnf::default();
 					let vars = cnf.new_var_range(LARGE_N).iter_lits().collect_vec();
 					let con = CardinalityOne {
@@ -364,7 +364,7 @@ pub(crate) mod tests {
 					assert_checker(&cnf, &con);
 				}
 				#[test]
-				fn test_amo_large_neg() {
+				fn amo_large_neg() {
 					let mut cnf = Cnf::default();
 					let vars = cnf.new_var_range(LARGE_N).iter_lits().collect_vec();
 					let con = CardinalityOne {
@@ -376,7 +376,7 @@ pub(crate) mod tests {
 					assert_checker(&cnf, &con);
 				}
 				#[test]
-				fn test_amo_large_mix() {
+				fn amo_large_mix() {
 					let mut cnf = Cnf::default();
 					let vars = cnf.new_var_range(LARGE_N).iter_lits().collect_vec();
 
@@ -395,7 +395,7 @@ pub(crate) mod tests {
 				}
 				// ------ Exactly One testing ------
 				#[test]
-				fn test_eo_pair() {
+				fn eo_pair() {
 					let mut cnf = Cnf::default();
 					let a = cnf.new_lit();
 					let b = cnf.new_lit();
@@ -416,7 +416,7 @@ pub(crate) mod tests {
 					);
 				}
 				#[test]
-				fn test_eo_one_neg() {
+				fn eo_one_neg() {
 					let mut cnf = Cnf::default();
 					let a = cnf.new_lit();
 					let b = cnf.new_lit();
@@ -437,7 +437,7 @@ pub(crate) mod tests {
 					);
 				}
 				#[test]
-				fn test_eo_neg_only() {
+				fn eo_neg_only() {
 					let mut cnf = Cnf::default();
 					let a = cnf.new_lit();
 					let b = cnf.new_lit();
@@ -458,7 +458,7 @@ pub(crate) mod tests {
 					);
 				}
 				#[test]
-				fn test_eo_triple() {
+				fn eo_triple() {
 					let mut cnf = Cnf::default();
 					let a = cnf.new_lit();
 					let b = cnf.new_lit();
@@ -480,7 +480,7 @@ pub(crate) mod tests {
 					);
 				}
 				#[test]
-				fn test_eo_large() {
+				fn eo_large() {
 					let mut cnf = Cnf::default();
 					let vars = cnf.new_var_range(LARGE_N).iter_lits().collect_vec();
 					let con = CardinalityOne {
@@ -492,7 +492,7 @@ pub(crate) mod tests {
 					assert_checker(&cnf, &con);
 				}
 				#[test]
-				fn test_eo_large_neg() {
+				fn eo_large_neg() {
 					let mut cnf = Cnf::default();
 					let vars = cnf.new_var_range(LARGE_N).iter_lits().collect_vec();
 					let con = CardinalityOne {
@@ -504,7 +504,7 @@ pub(crate) mod tests {
 					assert_checker(&cnf, &con);
 				}
 				#[test]
-				fn test_eo_large_mix() {
+				fn eo_large_mix() {
 					let mut cnf = Cnf::default();
 					let vars = cnf.new_var_range(LARGE_N).iter_lits().collect_vec();
 					let con = CardinalityOne {
@@ -534,7 +534,7 @@ pub(crate) mod tests {
 	};
 
 	#[test]
-	fn test_amo_pairwise() {
+	fn amo_pairwise() {
 		// AMO on two literals
 		let mut cnf = Cnf::default();
 		let a = cnf.new_lit();
@@ -608,7 +608,7 @@ pub(crate) mod tests {
 	}
 
 	#[test]
-	fn test_eo_bitwise() {
+	fn eo_bitwise() {
 		let mut cnf = Cnf::default();
 		let a = cnf.new_lit();
 		let b = cnf.new_lit();
@@ -634,7 +634,7 @@ pub(crate) mod tests {
 	}
 
 	#[test]
-	fn test_eo_ladder() {
+	fn eo_ladder() {
 		let mut cnf = Cnf::default();
 		let a = cnf.new_lit();
 		let b = cnf.new_lit();
