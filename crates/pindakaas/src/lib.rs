@@ -251,8 +251,8 @@ enum Dimacs {
 }
 
 /// Encoder is the central trait implemented for all the encoding algorithms
-pub trait Encoder<DB: ClauseDatabase + ?Sized, Constraint: ?Sized> {
-	fn encode(&self, db: &mut DB, con: &Constraint) -> Result;
+pub trait Encoder<Db: ClauseDatabase + ?Sized, Constraint: ?Sized> {
+	fn encode(&self, db: &mut Db, con: &Constraint) -> Result;
 }
 
 /// CertEncoder is the central trait implemented for all the certified encoding algorithms
@@ -715,7 +715,7 @@ impl Mul<Lit> for Coeff {
 	}
 }
 
-impl<DB: ClauseDatabase + ?Sized> ClauseDatabaseTools for DB {}
+impl<Db: ClauseDatabase + ?Sized> ClauseDatabaseTools for Db {}
 
 impl<F: Fn(Lit) -> bool> Valuation for F {
 	fn value(&self, lit: Lit) -> bool {
