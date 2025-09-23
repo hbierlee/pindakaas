@@ -65,8 +65,8 @@ pub enum BoolVal {
 pub trait Checker {
 	/// Check whether the constraint represented by the object is violated.
 	///
-	/// - The method returns [`Result::Ok`] when the assignment satisfies
-	///   the constraint,
+	/// - The method returns [`Result::Ok`] when the assignment satisfies the
+	///   constraint,
 	/// - it returns [`Unsatisfiable`] when the assignment violates the
 	///   constraint
 	fn check<F: Valuation + ?Sized>(&self, value: &F) -> Result<(), Unsatisfiable>;
@@ -81,8 +81,8 @@ pub trait Checker {
 pub trait ClauseDatabase {
 	/// Add a clause to the `ClauseDatabase`. The database is allowed to return
 	/// [`Unsatisfiable`] when the collection of clauses has been *proven* to be
-	/// unsatisfiable. This is used as a signal to the encoder that any subsequent
-	/// encoding effort can be abandoned.
+	/// unsatisfiable. This is used as a signal to the encoder that any
+	/// subsequent encoding effort can be abandoned.
 	fn add_clause_from_slice(&mut self, clause: &[Lit]) -> Result;
 	/// Method to be used to receive a new Boolean variable that can be used in
 	/// the encoding of a problem or constraint.
@@ -93,10 +93,10 @@ pub trait ClauseDatabase {
 /// [`ClauseDatabase`] providing a variety of utility methods that make it
 /// easier to write common clause encoding patterns.
 pub trait ClauseDatabaseTools: ClauseDatabase {
-	/// Add a clause, given as any to the `ClauseDatabase`. The database is allowed to return
-	/// [`Unsatisfiable`] when the collection of clauses has been *proven* to be
-	/// unsatisfiable. This is used as a signal to the encoder that any subsequent
-	/// encoding effort can be abandoned.
+	/// Add a clause, given as any to the `ClauseDatabase`. The database is
+	/// allowed to return [`Unsatisfiable`] when the collection of clauses has
+	/// been *proven* to be unsatisfiable. This is used as a signal to the
+	/// encoder that any subsequent encoding effort can be abandoned.
 	fn add_clause<Iter>(&mut self, clause: Iter) -> Result
 	where
 		Iter: IntoIterator,
@@ -156,8 +156,8 @@ pub trait ClauseDatabaseTools: ClauseDatabase {
 
 	#[cfg(any(feature = "tracing", test))]
 	#[inline]
-	/// Create a new Boolean variable in the form of a positive literal. The given
-	/// name is used when the variable is output by the tracer.
+	/// Create a new Boolean variable in the form of a positive literal. The
+	/// given name is used when the variable is output by the tracer.
 	fn new_named_lit(&mut self, name: &str) -> Lit {
 		self.new_named_var(name).into()
 	}
@@ -165,15 +165,16 @@ pub trait ClauseDatabaseTools: ClauseDatabase {
 	#[cfg(any(feature = "tracing", test))]
 	#[inline]
 	/// Create a new Boolean variable that can be used in the encoding of a
-	/// problem. The given name is used when the variable is output by the tracer.
+	/// problem. The given name is used when the variable is output by the
+	/// tracer.
 	fn new_named_var(&mut self, name: &str) -> Var {
 		let var = self.new_var();
 		tracing::info!(var = ?i32::from(var), label = name, "new variable");
 		var
 	}
 
-	/// Create a new Boolean variable that can be used in the encoding of a problem
-	/// or constraint.
+	/// Create a new Boolean variable that can be used in the encoding of a
+	/// problem or constraint.
 	fn new_var(&mut self) -> Var {
 		let mut range = self.new_var_range(1);
 		debug_assert_eq!(range.len(), 1);
@@ -196,8 +197,8 @@ pub trait ClauseDatabaseTools: ClauseDatabase {
 		range.collect_tuple().unwrap()
 	}
 
-	/// Create a [`ClauseDatabase`] wrapper that adds the given conditions to each
-	/// clause that it adds to the wrapped database.
+	/// Create a [`ClauseDatabase`] wrapper that adds the given conditions to
+	/// each clause that it adds to the wrapped database.
 	///
 	/// Note that the wrapped database type itself implements the
 	/// [`ClauseDatabase`] trait.
@@ -286,8 +287,8 @@ pub enum IntEncoding<'a> {
 	/// represents whether the integer takes the associated value (i.e., X =
 	/// (first+i) ↔ vals\[i\]).
 	Direct {
-		/// The offset of the value of the encoded integer variable, i.e. the value
-		/// if the first literal is `true`.
+		/// The offset of the value of the encoded integer variable, i.e. the
+		/// value if the first literal is `true`.
 		first: Coeff,
 		/// The list of literals representing the each value of the integer
 		/// variable.
@@ -297,8 +298,8 @@ pub enum IntEncoding<'a> {
 	/// encoding. Each given Boolean literal represents whether the integer
 	/// is bigger than the associated value(i.e., X > (first+i) ↔ vals\[i\]).
 	Order {
-		/// The offset of the value of the encoded integer variable, i.e. the value
-		/// if no literal is `true`.
+		/// The offset of the value of the encoded integer variable, i.e. the
+		/// value if no literal is `true`.
 		first: Coeff,
 		/// The list of literals representing the each value of the integer
 		/// variable.
@@ -311,7 +312,8 @@ pub enum IntEncoding<'a> {
 	Log {
 		/// Whether the first bit is interpreted as a sign bit.
 		signed: bool,
-		/// The list of literals representing the each bit of the integer variable.
+		/// The list of literals representing the each bit of the integer
+		/// variable.
 		bits: &'a [Lit],
 	},
 }
@@ -349,8 +351,8 @@ pub trait Valuation {
 	/// Returns the valuation/truth-value for a given literal in the
 	/// current solution/model.
 	///
-	/// Note that the function can return None if the model/solution is independent
-	/// of the given literal.
+	/// Note that the function can return None if the model/solution is
+	/// independent of the given literal.
 	fn value(&self, lit: Lit) -> bool;
 }
 
@@ -371,7 +373,8 @@ pub struct VarRange {
 
 /// A representation for a weighted CNF formula
 ///
-/// Same as CNF, but every clause has an optional weight. Otherwise, it is a hard clause.
+/// Same as CNF, but every clause has an optional weight. Otherwise, it is a
+/// hard clause.
 #[derive(Clone, Debug, Default)]
 pub struct Wcnf {
 	/// The CNF formula
@@ -421,7 +424,8 @@ fn parse_dimacs_file<const WEIGHTED: bool>(path: &Path) -> Result<Dimacs, io::Er
 					}
 				}
 			}
-			// parse header, expected format: "p cnf {num_var} {num_clauses}" or "p wcnf {num_var} {num_clauses} {top}"
+			// parse header, expected format: "p cnf {num_var} {num_clauses}" or "p wcnf {num_var}
+			// {num_clauses} {top}"
 			Ok(line) => {
 				let vec: Vec<&str> = line.split_whitespace().collect();
 				// check "p" and "cnf" keyword
@@ -628,7 +632,8 @@ impl Cnf {
 	}
 
 	#[cfg(test)]
-	/// Small helper method that gets all the created variables, used for testing.
+	/// Small helper method that gets all the created variables, used for
+	/// testing.
 	pub(crate) fn get_variables(&self) -> VarRange {
 		VarRange::new(
 			Var(NonZeroI32::new(1).unwrap()),
