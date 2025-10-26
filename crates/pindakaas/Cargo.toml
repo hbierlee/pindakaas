@@ -31,7 +31,7 @@ pindakaas-cadical = { version = "0.2.1", path = "../pindakaas-cadical", optional
 pindakaas-intel-sat = { version = "0.2.0", path = "../pindakaas-intel-sat", optional = true }
 pindakaas-kissat = { version = "0.2.0", path = "../pindakaas-kissat", optional = true }
 splr = { version = "0.17", optional = true }
-pigeons = "0.1.1"
+pigeons = "0.2.2"
 tempfile = "3.20.0"
 
 [dev-dependencies]

@@ -9,12 +9,11 @@
 //! [`NormalizedBoolLinear`] can also be used.
 
 use itertools::Itertools;
-use pigeons::{Axiom, OperationSequence, Proof, VarLike};
+// use pigeons::{OperationSequence, VarLike};
 
 use crate::{
 	bool_linear::{Comparator, LimitComp, NormalizedBoolLinear},
-	CertEncoder, Checker, ClauseDatabase, ClauseDatabaseTools, Encoder, Lit, Result, Valuation,
-	Var,
+	Checker, ClauseDatabase, ClauseDatabaseTools, Encoder, Lit, Result, Valuation,
 };
 
 /// An encoder for [`CardinalityOne`] constraints that uses a logarithm
@@ -130,7 +129,7 @@ impl<DB: ClauseDatabase + ?Sized> Encoder<DB, CardinalityOne> for LadderEncoder 
 	any(feature = "tracing", test),
 	tracing::instrument(name = "ladder_encoder", skip_all, fields(constraint = card1.trace_print()))
 )]
-	fn encode(&self, db: &mut Db, card1: &CardinalityOne) -> Result {
+	fn encode(&self, db: &mut DB, card1: &CardinalityOne) -> Result {
 		// TODO could be slightly optimised to not introduce fixed lits
 		let mut a = db.new_lit(); // y_v-1
 		if card1.cmp == LimitComp::Equal {
@@ -150,15 +149,15 @@ impl<DB: ClauseDatabase + ?Sized> Encoder<DB, CardinalityOne> for LadderEncoder 
 			db.add_clause([!a])?;
 		}
 
-		let mut proof = new_proof(2, false);
+		// let mut proof = new_proof(2, false);
 
-		proof
-			.operations(
-				&(OperationSequence::from(pigeons::ConstraintId::abs(1))
-					+ card1.lits.first().unwrap().pos_axiom()),
-			)
-			.unwrap();
-		print!("{:?}", proof);
+		// proof
+		// 	.operations(
+		// 		&(OperationSequence::from(pigeons::ConstraintId::abs(1))
+		// 			+ card1.lits.first().unwrap().pos_axiom()),
+		// 	)
+		// 	.unwrap();
+		// print!("{:?}", proof);
 		// print!("{:?}", proof.writer);
 		Ok(())
 	}

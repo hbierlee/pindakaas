@@ -242,7 +242,7 @@ use std::{
 
 use cardinality_one::CardinalityOne;
 use itertools::{traits::HomogeneousTuple, Itertools};
-use pigeons::{ConstraintLike, Proof, VarLike};
+use pigeons::{ConstraintLike, VarLike};
 
 pub use crate::helpers::AsDynClauseDatabase;
 use crate::{
@@ -477,11 +477,11 @@ pub trait Encoder<Db: ClauseDatabase + ?Sized, Constraint: ?Sized> {
 }
 
 /// CertEncoder is the central trait implemented for all the certified encoding algorithms
-pub trait CertEncoder<DB: ClauseDatabase + ?Sized, Constraint: ?Sized, W: std::io::Write>:
-	Encoder<DB, Constraint>
-{
-	fn encode_cert(&self, db: &mut DB, con: &Constraint, proof: &mut Proof<W>) -> Result;
-}
+// pub trait CertEncoder<DB: ClauseDatabase + ?Sized, Constraint: ?Sized, W: Write>:
+// 	Encoder<DB, Constraint>
+// {
+// 	fn encode_cert(&self, db: &mut DB, con: &Constraint, proof: &mut Proof<W>) -> Result;
+// }
 
 /// IntEncoding is a enumerated type use to represent Boolean encodings of
 /// integer variables within this library

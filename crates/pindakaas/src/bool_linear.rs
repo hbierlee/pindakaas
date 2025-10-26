@@ -2058,6 +2058,13 @@ impl TotalizerEncoder {
 	}
 }
 
+// PL: use declarations
+		use std::{
+			fs::{File, OpenOptions},
+			io::Write,
+			collections::HashMap,
+		};
+
 impl TotalizerEncoder {
 	fn build_totalizer(&self, xs: Vec<IntVarEnc>, cmp: &LimitComp, k: Coeff) -> Model {
 		let mut model = Model::default();
@@ -2065,6 +2072,31 @@ impl TotalizerEncoder {
 			.into_iter()
 			.map(|x| Rc::new(RefCell::new(model.add_int_var_enc(x))))
 			.collect_vec();
+
+		// PL: initialize leaves and weights
+		// TODOPL: is there a better way to retrieve weight and leaves?
+		let mut leaves: HashMap<usize, Vec<Rc<RefCell<IntVar>>>> = HashMap::new();
+		let mut weight: HashMap<usize, i64> = HashMap::new();
+		for l in layer.iter() {
+			leaves.insert(l.borrow().id, vec![Rc::clone(l)]);
+			for w in l.borrow().dom.iter().flatten() {
+				if w == 0 {
+					continue;
+				}
+				weight.insert(l.borrow().id, w);
+			}
+		}
+		let last_leaf = layer.last().unwrap().borrow().id;
+
+		// PL: create VeriPB proof
+		let mut file = File::create("proof.pbp").expect("Unable to create proof file");
+		file.write_all("pseudo-Boolean proof version 3.0\n".as_bytes())
+			.expect("Unable to write to proof file");
+		let mut file = OpenOptions::new()
+			.append(true)
+			.create(true)
+			.open("proof.pbp")
+			.expect("Unable to modify proof file");
 
 		while layer.len() > 1 {
 			let mut next_layer = Vec::<Rc<RefCell<IntVar>>>::new();
@@ -2091,6 +2123,96 @@ impl TotalizerEncoder {
 						let parent =
 							Rc::new(RefCell::new(model.new_var(dom, self.add_consistency)));
 
+						// PL: naming ids
+						let id = parent.borrow().id;
+						let id_l = left.borrow().id;
+						let id_r = right.borrow().id;
+						// PL: keep track of leaves and weight of counting variables from current node
+						let new_leaves =
+							vec![leaves.remove(&id_l).unwrap(), leaves.remove(&id_r).unwrap()]
+								.concat();
+						leaves.insert(id, new_leaves);
+						let new_weight =
+							weight.remove(&id_l).unwrap() + weight.remove(&id_r).unwrap();
+						weight.insert(id, new_weight);
+						// PL: print reification constraints of counting variables from current node
+						for d in parent.borrow().dom.iter().flatten() {
+							if d == 0 {
+								continue;
+							}
+							// PL: derive C^->_reif(y^\eta_d)
+							file.write_all("red ".to_string().as_bytes())
+								.expect("Unable to write to proof file");
+							file.write_all(d.to_string().as_bytes())
+								.expect("Unable to write to proof file");
+							file.write_all(" ~".as_bytes())
+								.expect("Unable to write to proof file");
+							file = write_counting_var(file, id, d);
+							for l in leaves.get(&id).unwrap() {
+								file.write_all(" ".as_bytes())
+									.expect("Unable to write to proof file");
+								for w in l.borrow().dom.iter().flatten() {
+									if w == 0 {
+										continue;
+									}
+									file.write_all(w.to_string().as_bytes())
+										.expect("Unable to write to proof file");
+									file.write_all(" ".to_string().as_bytes())
+										.expect("Unable to write to proof file");
+									file = write_input_var(file, l.borrow().id);
+								}
+							}
+							file.write_all(" >= ".as_bytes())
+								.expect("Unable to write to proof file");
+							file.write_all(d.to_string().as_bytes())
+								.expect("Unable to write to proof file");
+							file.write_all(" : ".as_bytes())
+								.expect("Unable to write to proof file");
+							file = write_counting_var(file, id, d);
+							file.write_all(" -> 0".as_bytes())
+								.expect("Unable to write to proof file");
+							file.write_all(";\n".to_string().as_bytes())
+								.expect("Unable to write to proof file");
+
+							// PL: write C^<-_reif(y^\eta_d)
+							file.write_all("red ".to_string().as_bytes())
+								.expect("Unable to write to proof file");
+							file.write_all(
+								(weight.get(&id).unwrap() - d + 1).to_string().as_bytes(),
+							)
+							.expect("Unable to write to proof file");
+							file.write_all(" ".as_bytes())
+								.expect("Unable to write to proof file");
+							file = write_counting_var(file, id, d);
+							for l in leaves.get(&id).unwrap() {
+								file.write_all(" ".as_bytes())
+									.expect("Unable to write to proof file");
+								for w in l.borrow().dom.iter().flatten() {
+									if w == 0 {
+										continue;
+									}
+									file.write_all(w.to_string().as_bytes())
+										.expect("Unable to write to proof file");
+									file.write_all(" ~".to_string().as_bytes())
+										.expect("Unable to write to proof file");
+									file = write_input_var(file, l.borrow().id);
+								}
+							}
+							file.write_all(" >= ".as_bytes())
+								.expect("Unable to write to proof file");
+							file.write_all(
+								(weight.get(&id).unwrap() - d + 1).to_string().as_bytes(),
+							)
+							.expect("Unable to write to proof file");
+							file.write_all(" : ".as_bytes())
+								.expect("Unable to write to proof file");
+							file = write_counting_var(file, id, d);
+							file.write_all(" -> 1".as_bytes())
+								.expect("Unable to write to proof file");
+							file.write_all(";\n".to_string().as_bytes())
+								.expect("Unable to write to proof file");
+						}
+
 						model.cons.push(Lin::tern(
 							Rc::clone(left),
 							Rc::clone(right),
@@ -2101,6 +2223,50 @@ impl TotalizerEncoder {
 							},
 							Rc::clone(&parent),
 						));
+
+						// PL: derive every C1 and C2 clause (depending on the cmp and the value of EQUALIZE_INTERMEDIATES)
+						// TODOPL: there HAS to be a more efficient way to do this
+						for a in left.borrow().dom.iter().flatten() {
+							for b in right.borrow().dom.iter().flatten() {
+								for c in parent.borrow().dom.iter().flatten() {
+									if a + b == c {
+										// PL: derive C1 clauses
+										if c != 0 {
+											// file.write_all("pol ".as_bytes())
+											// 	.expect("Unable to write to proof file");
+											if a != 0 {
+												file.write_all("~".as_bytes())
+													.expect("Unable to write to proof file");
+												// if the left children is a leaf
+												if id_l <= last_leaf {
+													file = write_input_var(file, id_l);
+												} else {
+													file = write_counting_var(file, id_l, a);
+												}
+												file.write_all(" ".as_bytes())
+													.expect("Unable to write to proof file");
+											}
+											if b != 0 {
+												file.write_all("~".as_bytes())
+													.expect("Unable to write to proof file");
+												// if the right children is a leaf
+												if id_r <= last_leaf {
+													file = write_input_var(file, id_r);
+												} else {
+													file = write_counting_var(file, id_r, b);
+												}
+												file.write_all(" ".as_bytes())
+													.expect("Unable to write to proof file");
+											}
+											file = write_counting_var(file, id, c);
+											file.write_all(" >= 1;\n".as_bytes())
+												.expect("Unable to write to proof file");
+										}
+									}
+								}
+							}
+						}
+
 						next_layer.push(parent);
 					}
 					_ => panic!(),
@@ -2109,8 +2275,34 @@ impl TotalizerEncoder {
 			layer = next_layer;
 		}
 
+		file.write_all("output EQUISATISFIABLE IMPLICIT;\n".as_bytes())
+			.expect("Unable to write to proof file");
+		file.write_all("conclusion NONE;\n".as_bytes())
+			.expect("Unable to write to proof file");
+		file.write_all("end pseudo-Boolean proof;".as_bytes())
+			.expect("Unable to write to proof file");
 		model
 	}
+}
+
+fn write_counting_var(mut file: File, id: usize, d: i64) -> File {
+	file.write_all("y".as_bytes())
+		.expect("Unable to write to proof file");
+	file.write_all(id.to_string().as_bytes())
+		.expect("Unable to write to proof file");
+	file.write_all("_".as_bytes())
+		.expect("Unable to write to proof file");
+	file.write_all(d.to_string().as_bytes())
+		.expect("Unable to write to proof file");
+	file
+}
+
+fn write_input_var(mut file: File, id: usize) -> File {
+	file.write_all("x".as_bytes())
+		.expect("Unable to write to proof file");
+	file.write_all(id.to_string().as_bytes())
+		.expect("Unable to write to proof file");
+	file
 }
 
 impl<Db> Encoder<Db, NormalizedBoolLinear> for TotalizerEncoder
@@ -2133,7 +2325,7 @@ where
 		// The totalizer encoding constructs a binary tree starting from a layer of
 		// leaves
 		let mut model = self.build_totalizer(xs, &lin.cmp, *lin.k);
-		model.propagate(&self.add_propagation, vec![model.cons.len() - 1]);
+		// model.propagate(&self.add_propagation, vec![model.cons.len() - 1]);
 		model.encode(db, self.cutoff)
 	}
 }
@@ -2362,7 +2554,10 @@ mod tests {
 		};
 	}
 
-	use std::{cmp::Ordering, num::NonZeroI32};
+	use std::{
+		cmp::Ordering,
+		num::NonZeroI32, // , ops::Add
+	};
 
 	use itertools::Itertools;
 	pub(crate) use linear_test_suite;
@@ -2380,6 +2575,35 @@ mod tests {
 		sorted::SortedEncoder,
 		ClauseDatabase, ClauseDatabaseTools, Cnf, Coeff, Encoder, Lit, Unsatisfiable,
 	};
+
+	#[test]
+	fn test_cert() {
+		let mut cnf = Cnf::default();
+		let (a, b, c) = cnf.new_lits();
+
+		// let con = BoolLinear::new(a * 2 + b * 3 + c * 4, Comparator::LessEq, 4);
+
+		// let lin_enc = StaticLinEncoder::new(
+		// 	TotalizerEncoder::default(),
+		// 	TotalizerEncoder::default(),
+		// 	TotalizerEncoder::default(),
+		// );
+		// let enc = LinearEncoder::new(lin_enc, BoolLinAggregator::default());
+		// cnf.encode(&con, &enc).expect("encoding failed");
+
+		TotalizerEncoder::default()
+			.encode(
+				&mut cnf,
+				&NormalizedBoolLinear {
+					terms: construct_terms(&[(a, 2), (b, 3), (c, 5)]),
+					cmp: LimitComp::LessEq,
+					k: PosCoeff::new(5),
+				},
+			)
+			.unwrap();
+		// TODO add proof logging and assert verified proof
+		print!("{}", cnf);
+	}
 
 	#[test]
 	fn aggregator_at_least_one_negated() {
