@@ -1,12 +1,20 @@
 # Proof-logging
 
+## Roadmap meeting 2025-10-30
+
+- [ ] Finish implementing => direction
+- [ ] Pipeline read input -> output proof -> check with VeriPB and implement it in some tests
+- [ ] Implement <= direction
+- [ ] Improve the code (pigeons + avoid retrieving clauses two times)
+- [ ] Run benchmarks
+
 ## Questions/goals/notes meeting 2025-05-30
 
-- [ ] On the doc
-- [ ] "Only" defining both dirs, done?
-- [ ] Set-up fork / branch
-- [ ] Check up Rust experience?
-- [ ] RustSAT's bidirectional certification?
+- [x] On the doc
+- [x] "Only" defining both dirs, done?
+- [x] Set-up fork / branch
+- [x] Check up Rust experience?
+- [x] RustSAT's bidirectional certification?
   - Is this reverse direction the same as Carlos?
   - Harder question: do they change their encoding?
 - Matthew's talk : https://www.youtube.com/watch?v=2U4QSBxsddU&t=3244s
