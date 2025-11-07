@@ -2058,12 +2058,185 @@ impl TotalizerEncoder {
 	}
 }
 
-// PL: use declarations
-		use std::{
-			fs::{File, OpenOptions},
-			io::Write,
-			collections::HashMap,
-		};
+/************************************
+********** Proof Logging ************
+*************************************/
+
+use std::{
+	collections::HashMap,
+	fs::{File, OpenOptions},
+	io::Write,
+};
+
+fn write_to_file(mut file: File, string: &str) -> File {
+	file.write_all(string.as_bytes())
+		.expect("Unable to write to proof file");
+	file
+}
+
+fn write_line_to_file(mut file: File, string: &str) -> File {
+	file = write_to_file(file, string);
+	file.write_all("\n".as_bytes())
+		.expect("Unable to write to proof file");
+	file
+}
+
+fn proof_setup(path: &str) -> File {
+	let file = File::create(path).expect("Unable to create proof file");
+	write_line_to_file(file, "pseudo-Boolean proof version 3.0");
+	let file = OpenOptions::new()
+		.append(true)
+		.create(true)
+		.open(path)
+		.expect("Unable to modify proof file");
+	file
+}
+
+fn counting_variable(id: usize, d: i64) -> String {
+	let mut string = String::from("y");
+	string.push_str(&id.to_string());
+	string.push('_');
+	string.push_str(&d.to_string());
+	string
+}
+
+fn input_variable(id: usize) -> String {
+	let mut string = String::from("x");
+	string.push_str(&id.to_string());
+	string
+}
+
+fn constraint_reif_right(id: usize, d: i64, leaves: &Vec<Rc<RefCell<IntVar>>>) -> String {
+	let mut constraint = String::from(&d.to_string());
+	constraint.push_str(" ~");
+	constraint.push_str(&counting_variable(id, d));
+	for l in leaves {
+		constraint.push_str(" ");
+		for w in l.borrow().dom.iter().flatten() {
+			if w == 0 {
+				continue;
+			}
+			constraint.push_str(&w.to_string());
+			constraint.push_str(" ");
+			constraint.push_str(&input_variable(l.borrow().id));
+		}
+	}
+	constraint.push_str(" >= ");
+	constraint.push_str(&d.to_string());
+
+	constraint
+}
+
+fn write_reif_right(file: File, id: usize, d: i64, constraint: &str) -> File {
+	let mut string = String::from("red ");
+	string.push_str(constraint);
+	string.push_str(" : ");
+	string.push_str(&counting_variable(id, d));
+	string.push_str(" -> 0;");
+
+	write_line_to_file(file, &string)
+}
+
+fn constraint_reif_left(
+	id: usize,
+	d: i64,
+	weight: i64,
+	leaves: &Vec<Rc<RefCell<IntVar>>>,
+) -> String {
+	let mut constraint = String::from(&(weight - d + 1).to_string());
+	constraint.push_str(" ");
+	constraint.push_str(&counting_variable(id, d));
+	for l in leaves {
+		constraint.push_str(" ");
+		for w in l.borrow().dom.iter().flatten() {
+			if w == 0 {
+				continue;
+			}
+			constraint.push_str(&w.to_string());
+			constraint.push_str(" ~");
+			constraint.push_str(&input_variable(l.borrow().id));
+		}
+	}
+	constraint.push_str(" >= ");
+	constraint.push_str(&(weight - d + 1).to_string());
+
+	constraint
+}
+
+fn write_reif_left(file: File, id: usize, d: i64, constraint: &str) -> File {
+	let mut string = String::from("red ");
+	string.push_str(constraint);
+	string.push_str(" : ");
+	string.push_str(&counting_variable(id, d));
+	string.push_str(" -> 1;");
+
+	write_line_to_file(file, &string)
+}
+
+fn clause_C1() {
+	// if c != 0 {
+	// 	if !at_root && a + b == c {
+	// 		// file.write_all("pol ".as_bytes())
+	// 		// 	.expect("Unable to write to proof file");
+	// 		if a != 0 {
+	// 			file.write_all("~".as_bytes())
+	// 				.expect("Unable to write to proof file");
+	// 			// if the left children is a leaf
+	// 			if id_l <= last_leaf {
+	// 				file = write_input_var(file, id_l);
+	// 			} else {
+	// 				file = write_counting_var(file, id_l, a);
+	// 			}
+	// 			file.write_all(" ".as_bytes())
+	// 				.expect("Unable to write to proof file");
+	// 		}
+	// 		if b != 0 {
+	// 			file.write_all("~".as_bytes())
+	// 				.expect("Unable to write to proof file");
+	// 			// if the right children is a leaf
+	// 			if id_r <= last_leaf {
+	// 				file = write_input_var(file, id_r);
+	// 			} else {
+	// 				file = write_counting_var(file, id_r, b);
+	// 			}
+	// 			file.write_all(" ".as_bytes())
+	// 				.expect("Unable to write to proof file");
+	// 		}
+	// 		file = write_counting_var(file, id, c);
+	// 		file.write_all(" >= 1;\n".as_bytes())
+	// 			.expect("Unable to write to proof file");
+	// 	} else if a + b > k {
+	// 		// file.write_all("pol ".as_bytes())
+	// 		// 	.expect("Unable to write to proof file");
+	// 		if a != 0 {
+	// 			file.write_all("~".as_bytes())
+	// 				.expect("Unable to write to proof file");
+	// 			// if the left children is a leaf
+	// 			if id_l <= last_leaf {
+	// 				file = write_input_var(file, id_l);
+	// 			} else {
+	// 				file = write_counting_var(file, id_l, a);
+	// 			}
+	// 			file.write_all(" ".as_bytes())
+	// 				.expect("Unable to write to proof file");
+	// 		}
+	// 		if b != 0 {
+	// 			file.write_all("~".as_bytes())
+	// 				.expect("Unable to write to proof file");
+	// 			// if the right children is a leaf
+	// 			if id_r <= last_leaf {
+	// 				file = write_input_var(file, id_r);
+	// 			} else {
+	// 				file = write_counting_var(file, id_r, b);
+	// 			}
+	// 			file.write_all(" ".as_bytes())
+	// 				.expect("Unable to write to proof file");
+	// 		}
+	// 		file.write_all(">= 1;\n".as_bytes())
+	// 			.expect("Unable to write to proof file");
+	// 	}
+	// }
+}
 
 impl TotalizerEncoder {
 	fn build_totalizer(&self, xs: Vec<IntVarEnc>, cmp: &LimitComp, k: Coeff) -> Model {
@@ -2087,16 +2260,14 @@ impl TotalizerEncoder {
 			}
 		}
 		let last_leaf = layer.last().unwrap().borrow().id;
+		// PL: create constraint id vector
+		let mut constraint_id: Vec<String> = Vec::new();
+		// the first constraint id we record is 2
+		constraint_id.push(String::new());
+		constraint_id.push(String::new());
 
 		// PL: create VeriPB proof
-		let mut file = File::create("proof.pbp").expect("Unable to create proof file");
-		file.write_all("pseudo-Boolean proof version 3.0\n".as_bytes())
-			.expect("Unable to write to proof file");
-		let mut file = OpenOptions::new()
-			.append(true)
-			.create(true)
-			.open("proof.pbp")
-			.expect("Unable to modify proof file");
+		let mut file = proof_setup("proof.pbp");
 
 		while layer.len() > 1 {
 			let mut next_layer = Vec::<Rc<RefCell<IntVar>>>::new();
@@ -2123,7 +2294,7 @@ impl TotalizerEncoder {
 						let parent =
 							Rc::new(RefCell::new(model.new_var(dom, self.add_consistency)));
 
-						// PL: naming ids
+						// PL: naming node ids
 						let id = parent.borrow().id;
 						let id_l = left.borrow().id;
 						let id_r = right.borrow().id;
@@ -2141,76 +2312,20 @@ impl TotalizerEncoder {
 								continue;
 							}
 							// PL: derive C^->_reif(y^\eta_d)
-							file.write_all("red ".to_string().as_bytes())
-								.expect("Unable to write to proof file");
-							file.write_all(d.to_string().as_bytes())
-								.expect("Unable to write to proof file");
-							file.write_all(" ~".as_bytes())
-								.expect("Unable to write to proof file");
-							file = write_counting_var(file, id, d);
-							for l in leaves.get(&id).unwrap() {
-								file.write_all(" ".as_bytes())
-									.expect("Unable to write to proof file");
-								for w in l.borrow().dom.iter().flatten() {
-									if w == 0 {
-										continue;
-									}
-									file.write_all(w.to_string().as_bytes())
-										.expect("Unable to write to proof file");
-									file.write_all(" ".to_string().as_bytes())
-										.expect("Unable to write to proof file");
-									file = write_input_var(file, l.borrow().id);
-								}
-							}
-							file.write_all(" >= ".as_bytes())
-								.expect("Unable to write to proof file");
-							file.write_all(d.to_string().as_bytes())
-								.expect("Unable to write to proof file");
-							file.write_all(" : ".as_bytes())
-								.expect("Unable to write to proof file");
-							file = write_counting_var(file, id, d);
-							file.write_all(" -> 0".as_bytes())
-								.expect("Unable to write to proof file");
-							file.write_all(";\n".to_string().as_bytes())
-								.expect("Unable to write to proof file");
+							let constraint_right =
+								constraint_reif_right(id, d, leaves.get(&id).unwrap());
+							file = write_reif_right(file, id, d, &constraint_right);
+							constraint_id.push(constraint_right);
 
-							// PL: write C^<-_reif(y^\eta_d)
-							file.write_all("red ".to_string().as_bytes())
-								.expect("Unable to write to proof file");
-							file.write_all(
-								(weight.get(&id).unwrap() - d + 1).to_string().as_bytes(),
-							)
-							.expect("Unable to write to proof file");
-							file.write_all(" ".as_bytes())
-								.expect("Unable to write to proof file");
-							file = write_counting_var(file, id, d);
-							for l in leaves.get(&id).unwrap() {
-								file.write_all(" ".as_bytes())
-									.expect("Unable to write to proof file");
-								for w in l.borrow().dom.iter().flatten() {
-									if w == 0 {
-										continue;
-									}
-									file.write_all(w.to_string().as_bytes())
-										.expect("Unable to write to proof file");
-									file.write_all(" ~".to_string().as_bytes())
-										.expect("Unable to write to proof file");
-									file = write_input_var(file, l.borrow().id);
-								}
-							}
-							file.write_all(" >= ".as_bytes())
-								.expect("Unable to write to proof file");
-							file.write_all(
-								(weight.get(&id).unwrap() - d + 1).to_string().as_bytes(),
-							)
-							.expect("Unable to write to proof file");
-							file.write_all(" : ".as_bytes())
-								.expect("Unable to write to proof file");
-							file = write_counting_var(file, id, d);
-							file.write_all(" -> 1".as_bytes())
-								.expect("Unable to write to proof file");
-							file.write_all(";\n".to_string().as_bytes())
-								.expect("Unable to write to proof file");
+							// PL: derive C^<-_reif(y^\eta_d)
+							let constraint_left = constraint_reif_left(
+								id,
+								d,
+								*weight.get(&id).unwrap(),
+								leaves.get(&id).unwrap(),
+							);
+							file = write_reif_left(file, id, d, &constraint_left);
+							constraint_id.push(constraint_left);
 						}
 
 						model.cons.push(Lin::tern(
@@ -2229,40 +2344,70 @@ impl TotalizerEncoder {
 						for a in left.borrow().dom.iter().flatten() {
 							for b in right.borrow().dom.iter().flatten() {
 								for c in parent.borrow().dom.iter().flatten() {
-									if a + b == c {
-										// PL: derive C1 clauses
-										if c != 0 {
-											// file.write_all("pol ".as_bytes())
-											// 	.expect("Unable to write to proof file");
-											if a != 0 {
-												file.write_all("~".as_bytes())
-													.expect("Unable to write to proof file");
-												// if the left children is a leaf
-												if id_l <= last_leaf {
-													file = write_input_var(file, id_l);
-												} else {
-													file = write_counting_var(file, id_l, a);
-												}
-												file.write_all(" ".as_bytes())
-													.expect("Unable to write to proof file");
-											}
-											if b != 0 {
-												file.write_all("~".as_bytes())
-													.expect("Unable to write to proof file");
-												// if the right children is a leaf
-												if id_r <= last_leaf {
-													file = write_input_var(file, id_r);
-												} else {
-													file = write_counting_var(file, id_r, b);
-												}
-												file.write_all(" ".as_bytes())
-													.expect("Unable to write to proof file");
-											}
-											file = write_counting_var(file, id, c);
-											file.write_all(" >= 1;\n".as_bytes())
-												.expect("Unable to write to proof file");
-										}
-									}
+									// PL: derive C1 clauses
+
+									// if c != 0 {
+									// 	if !at_root && a + b == c {
+									// 		// file.write_all("pol ".as_bytes())
+									// 		// 	.expect("Unable to write to proof file");
+									// 		if a != 0 {
+									// 			file.write_all("~".as_bytes())
+									// 				.expect("Unable to write to proof file");
+									// 			// if the left children is a leaf
+									// 			if id_l <= last_leaf {
+									// 				file = write_input_var(file, id_l);
+									// 			} else {
+									// 				file = write_counting_var(file, id_l, a);
+									// 			}
+									// 			file.write_all(" ".as_bytes())
+									// 				.expect("Unable to write to proof file");
+									// 		}
+									// 		if b != 0 {
+									// 			file.write_all("~".as_bytes())
+									// 				.expect("Unable to write to proof file");
+									// 			// if the right children is a leaf
+									// 			if id_r <= last_leaf {
+									// 				file = write_input_var(file, id_r);
+									// 			} else {
+									// 				file = write_counting_var(file, id_r, b);
+									// 			}
+									// 			file.write_all(" ".as_bytes())
+									// 				.expect("Unable to write to proof file");
+									// 		}
+									// 		file = write_counting_var(file, id, c);
+									// 		file.write_all(" >= 1;\n".as_bytes())
+									// 			.expect("Unable to write to proof file");
+									// 	} else if a + b > k {
+									// 		// file.write_all("pol ".as_bytes())
+									// 		// 	.expect("Unable to write to proof file");
+									// 		if a != 0 {
+									// 			file.write_all("~".as_bytes())
+									// 				.expect("Unable to write to proof file");
+									// 			// if the left children is a leaf
+									// 			if id_l <= last_leaf {
+									// 				file = write_input_var(file, id_l);
+									// 			} else {
+									// 				file = write_counting_var(file, id_l, a);
+									// 			}
+									// 			file.write_all(" ".as_bytes())
+									// 				.expect("Unable to write to proof file");
+									// 		}
+									// 		if b != 0 {
+									// 			file.write_all("~".as_bytes())
+									// 				.expect("Unable to write to proof file");
+									// 			// if the right children is a leaf
+									// 			if id_r <= last_leaf {
+									// 				file = write_input_var(file, id_r);
+									// 			} else {
+									// 				file = write_counting_var(file, id_r, b);
+									// 			}
+									// 			file.write_all(" ".as_bytes())
+									// 				.expect("Unable to write to proof file");
+									// 		}
+									// 		file.write_all(">= 1;\n".as_bytes())
+									// 			.expect("Unable to write to proof file");
+									// 	}
+									// }
 								}
 							}
 						}
@@ -2283,26 +2428,6 @@ impl TotalizerEncoder {
 			.expect("Unable to write to proof file");
 		model
 	}
-}
-
-fn write_counting_var(mut file: File, id: usize, d: i64) -> File {
-	file.write_all("y".as_bytes())
-		.expect("Unable to write to proof file");
-	file.write_all(id.to_string().as_bytes())
-		.expect("Unable to write to proof file");
-	file.write_all("_".as_bytes())
-		.expect("Unable to write to proof file");
-	file.write_all(d.to_string().as_bytes())
-		.expect("Unable to write to proof file");
-	file
-}
-
-fn write_input_var(mut file: File, id: usize) -> File {
-	file.write_all("x".as_bytes())
-		.expect("Unable to write to proof file");
-	file.write_all(id.to_string().as_bytes())
-		.expect("Unable to write to proof file");
-	file
 }
 
 impl<Db> Encoder<Db, NormalizedBoolLinear> for TotalizerEncoder
@@ -2580,16 +2705,6 @@ mod tests {
 	fn test_cert() {
 		let mut cnf = Cnf::default();
 		let (a, b, c) = cnf.new_lits();
-
-		// let con = BoolLinear::new(a * 2 + b * 3 + c * 4, Comparator::LessEq, 4);
-
-		// let lin_enc = StaticLinEncoder::new(
-		// 	TotalizerEncoder::default(),
-		// 	TotalizerEncoder::default(),
-		// 	TotalizerEncoder::default(),
-		// );
-		// let enc = LinearEncoder::new(lin_enc, BoolLinAggregator::default());
-		// cnf.encode(&con, &enc).expect("encoding failed");
 
 		TotalizerEncoder::default()
 			.encode(
