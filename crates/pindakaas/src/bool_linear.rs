@@ -15,6 +15,7 @@
 //! [`BoolLinVariant`] [`Encoder`].
 
 use std::{
+	arch::x86_64::_MM_FLUSH_ZERO_OFF,
 	cell::RefCell,
 	cmp::{max, min, Ordering},
 	collections::VecDeque,
@@ -2100,17 +2101,22 @@ fn counting_variable(id: usize, d: i64) -> String {
 	string
 }
 
-fn input_variable(id: usize) -> String {
+fn input_literal(id: usize) -> String {
 	let mut string = String::from("x");
 	string.push_str(&id.to_string());
 	string
 }
 
-fn constraint_reif_right(id: usize, d: i64, leaves: &Vec<Rc<RefCell<IntVar>>>) -> String {
+fn constraint_reif_right(
+	id: usize,
+	d: i64,
+	leaves_l: &Vec<Rc<RefCell<IntVar>>>,
+	leaves_r: &Vec<Rc<RefCell<IntVar>>>,
+) -> String {
 	let mut constraint = String::from(&d.to_string());
 	constraint.push_str(" ~");
 	constraint.push_str(&counting_variable(id, d));
-	for l in leaves {
+	for l in leaves_l {
 		constraint.push_str(" ");
 		for w in l.borrow().dom.iter().flatten() {
 			if w == 0 {
@@ -2118,7 +2124,18 @@ fn constraint_reif_right(id: usize, d: i64, leaves: &Vec<Rc<RefCell<IntVar>>>) -
 			}
 			constraint.push_str(&w.to_string());
 			constraint.push_str(" ");
-			constraint.push_str(&input_variable(l.borrow().id));
+			constraint.push_str(&input_literal(l.borrow().id));
+		}
+	}
+	for l in leaves_r {
+		constraint.push_str(" ");
+		for w in l.borrow().dom.iter().flatten() {
+			if w == 0 {
+				continue;
+			}
+			constraint.push_str(&w.to_string());
+			constraint.push_str(" ");
+			constraint.push_str(&input_literal(l.borrow().id));
 		}
 	}
 	constraint.push_str(" >= ");
@@ -2128,7 +2145,11 @@ fn constraint_reif_right(id: usize, d: i64, leaves: &Vec<Rc<RefCell<IntVar>>>) -
 }
 
 fn write_reif_right(file: File, id: usize, d: i64, constraint: &str) -> File {
-	let mut string = String::from("red ");
+	let mut string = String::from("@reif_r_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" red ");
 	string.push_str(constraint);
 	string.push_str(" : ");
 	string.push_str(&counting_variable(id, d));
@@ -2141,12 +2162,13 @@ fn constraint_reif_left(
 	id: usize,
 	d: i64,
 	weight: i64,
-	leaves: &Vec<Rc<RefCell<IntVar>>>,
+	leaves_l: &Vec<Rc<RefCell<IntVar>>>,
+	leaves_r: &Vec<Rc<RefCell<IntVar>>>,
 ) -> String {
 	let mut constraint = String::from(&(weight - d + 1).to_string());
 	constraint.push_str(" ");
 	constraint.push_str(&counting_variable(id, d));
-	for l in leaves {
+	for l in leaves_l {
 		constraint.push_str(" ");
 		for w in l.borrow().dom.iter().flatten() {
 			if w == 0 {
@@ -2154,7 +2176,18 @@ fn constraint_reif_left(
 			}
 			constraint.push_str(&w.to_string());
 			constraint.push_str(" ~");
-			constraint.push_str(&input_variable(l.borrow().id));
+			constraint.push_str(&input_literal(l.borrow().id));
+		}
+	}
+	for l in leaves_r {
+		constraint.push_str(" ");
+		for w in l.borrow().dom.iter().flatten() {
+			if w == 0 {
+				continue;
+			}
+			constraint.push_str(&w.to_string());
+			constraint.push_str(" ~");
+			constraint.push_str(&input_literal(l.borrow().id));
 		}
 	}
 	constraint.push_str(" >= ");
@@ -2164,7 +2197,11 @@ fn constraint_reif_left(
 }
 
 fn write_reif_left(file: File, id: usize, d: i64, constraint: &str) -> File {
-	let mut string = String::from("red ");
+	let mut string = String::from("@reif_l_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" red ");
 	string.push_str(constraint);
 	string.push_str(" : ");
 	string.push_str(&counting_variable(id, d));
@@ -2173,69 +2210,174 @@ fn write_reif_left(file: File, id: usize, d: i64, constraint: &str) -> File {
 	write_line_to_file(file, &string)
 }
 
-fn clause_C1() {
-	// if c != 0 {
-	// 	if !at_root && a + b == c {
-	// 		// file.write_all("pol ".as_bytes())
-	// 		// 	.expect("Unable to write to proof file");
-	// 		if a != 0 {
-	// 			file.write_all("~".as_bytes())
-	// 				.expect("Unable to write to proof file");
-	// 			// if the left children is a leaf
-	// 			if id_l <= last_leaf {
-	// 				file = write_input_var(file, id_l);
-	// 			} else {
-	// 				file = write_counting_var(file, id_l, a);
-	// 			}
-	// 			file.write_all(" ".as_bytes())
-	// 				.expect("Unable to write to proof file");
-	// 		}
-	// 		if b != 0 {
-	// 			file.write_all("~".as_bytes())
-	// 				.expect("Unable to write to proof file");
-	// 			// if the right children is a leaf
-	// 			if id_r <= last_leaf {
-	// 				file = write_input_var(file, id_r);
-	// 			} else {
-	// 				file = write_counting_var(file, id_r, b);
-	// 			}
-	// 			file.write_all(" ".as_bytes())
-	// 				.expect("Unable to write to proof file");
-	// 		}
-	// 		file = write_counting_var(file, id, c);
-	// 		file.write_all(" >= 1;\n".as_bytes())
-	// 			.expect("Unable to write to proof file");
-	// 	} else if a + b > k {
-	// 		// file.write_all("pol ".as_bytes())
-	// 		// 	.expect("Unable to write to proof file");
-	// 		if a != 0 {
-	// 			file.write_all("~".as_bytes())
-	// 				.expect("Unable to write to proof file");
-	// 			// if the left children is a leaf
-	// 			if id_l <= last_leaf {
-	// 				file = write_input_var(file, id_l);
-	// 			} else {
-	// 				file = write_counting_var(file, id_l, a);
-	// 			}
-	// 			file.write_all(" ".as_bytes())
-	// 				.expect("Unable to write to proof file");
-	// 		}
-	// 		if b != 0 {
-	// 			file.write_all("~".as_bytes())
-	// 				.expect("Unable to write to proof file");
-	// 			// if the right children is a leaf
-	// 			if id_r <= last_leaf {
-	// 				file = write_input_var(file, id_r);
-	// 			} else {
-	// 				file = write_counting_var(file, id_r, b);
-	// 			}
-	// 			file.write_all(" ".as_bytes())
-	// 				.expect("Unable to write to proof file");
-	// 		}
-	// 		file.write_all(">= 1;\n".as_bytes())
-	// 			.expect("Unable to write to proof file");
-	// 	}
+fn clause_c1(
+	id: usize,
+	id_l: usize,
+	id_r: usize,
+	a: i64,
+	b: i64,
+	c: i64,
+	last_leaf: usize,
+) -> String {
+	let mut string = String::new();
+	if a != 0 {
+		string.push_str("1 ~");
+		// if the left children is a leaf
+		if id_l <= last_leaf {
+			string.push_str(&input_literal(id_l));
+		} else {
+			string.push_str(&counting_variable(id_l, a));
+		}
+		string.push_str(" ");
+	}
+	if b != 0 {
+		string.push_str("1 ~");
+		// if the right children is a leaf
+		if id_r <= last_leaf {
+			string.push_str(&input_literal(id_r));
+		} else {
+			string.push_str(&counting_variable(id_r, b));
+		}
+		string.push_str(" ");
+	}
+	// TODOPL: when a + b > k, this is not exactly what is derived (we need to account for propagation somehow)
+	// if a + b == c {
+	string.push_str("1 ");
+	string.push_str(&counting_variable(id, c));
+	string.push_str(" ");
 	// }
+	string.push_str(">= 1");
+
+	return string;
+}
+
+fn write_clause_c1(
+	file: File,
+	id: usize,
+	id_l: usize,
+	leaves_left: &Vec<Rc<RefCell<IntVar>>>,
+	id_r: usize,
+	leaves_right: &Vec<Rc<RefCell<IntVar>>>,
+	a: i64,
+	b: i64,
+	c: i64,
+	last_leaf: usize,
+) -> File {
+	let mut string = String::from("@c1_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&a.to_string());
+	string.push_str("_");
+	string.push_str(&b.to_string());
+	string.push_str("_");
+	string.push_str(&c.to_string());
+	string.push_str(" pol");
+
+	// add up reification constraints
+	if id_l > last_leaf {
+		string.push_str(" @reif_r_");
+		string.push_str(&id_l.to_string());
+		string.push_str("_");
+		string.push_str(&a.to_string());
+	}
+
+	if id_r > last_leaf {
+		string.push_str(" @reif_r_");
+		string.push_str(&id_r.to_string());
+		string.push_str("_");
+		string.push_str(&b.to_string());
+	}
+
+	if id_l > last_leaf && id_r > last_leaf {
+		string.push_str(" +");
+	}
+
+	string.push_str(" @reif_l_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&c.to_string());
+
+	if id_l > last_leaf || id_r > last_leaf {
+		string.push_str(" +");
+	}
+
+	// weaken unnecessary literals
+	if a == 0 {
+		for l in leaves_left {
+			string.push_str(" ");
+			string.push_str(&input_literal(l.borrow().id));
+			string.push_str(" w");
+		}
+	}
+
+	if b == 0 {
+		for l in leaves_right {
+			string.push_str(" ");
+			string.push_str(&input_literal(l.borrow().id));
+			string.push_str(" w");
+		}
+	}
+
+	if a + b > c {
+		string.push_str(" ");
+		string.push_str(&(a + b - c + 1).to_string());
+		string.push_str(" d");
+	}
+
+	// saturate the result
+	string.push_str(" s;");
+
+	write_line_to_file(file, &string)
+}
+
+// fn clause_c2(
+// 	id: usize,
+// 	id_l: usize,
+// 	id_r: usize,
+// 	a: i64,
+// 	b: i64,
+// 	c: i64,
+// 	last_leaf: usize,
+// ) -> String {
+// 	let mut string = String::new();
+// 	if a != 0 {
+// 		string.push_str("1 ~");
+// 		// if the left children is a leaf
+// 		if id_l <= last_leaf {
+// 			string.push_str(&input_literal(id_l));
+// 		} else {
+// 			string.push_str(&counting_variable(id_l, a));
+// 		}
+// 		string.push_str(" ");
+// 	}
+// 	if b != 0 {
+// 		string.push_str("1 ~");
+// 		// if the right children is a leaf
+// 		if id_r <= last_leaf {
+// 			string.push_str(&input_literal(id_r));
+// 		} else {
+// 			string.push_str(&counting_variable(id_r, b));
+// 		}
+// 		string.push_str(" ");
+// 	}
+// 	// TODOPL: when a + b > k, this is not what is derived (we need to account for propagation somehow)
+// 	// if a + b == c {
+// 	string.push_str("1 ");
+// 	string.push_str(&counting_variable(id, c));
+// 	string.push_str(" ");
+// 	// }
+// 	string.push_str(">= 1");
+
+// 	return string;
+// }
+
+fn write_sanity_check(file: File, constraint: &str, constraint_id: usize) -> File {
+	let mut string = String::from("e ");
+	string.push_str(constraint);
+	string.push_str(" : ");
+	string.push_str(&constraint_id.to_string());
+	string.push_str(";");
+	write_line_to_file(file, &string)
 }
 
 impl TotalizerEncoder {
@@ -2262,8 +2404,7 @@ impl TotalizerEncoder {
 		let last_leaf = layer.last().unwrap().borrow().id;
 		// PL: create constraint id vector
 		let mut constraint_id: Vec<String> = Vec::new();
-		// the first constraint id we record is 2
-		constraint_id.push(String::new());
+		// we cannot keep track of the initial constraint
 		constraint_id.push(String::new());
 
 		// PL: create VeriPB proof
@@ -2294,15 +2435,14 @@ impl TotalizerEncoder {
 						let parent =
 							Rc::new(RefCell::new(model.new_var(dom, self.add_consistency)));
 
-						// PL: naming node ids
+						// PL: identifiers for nodes and leaves
 						let id = parent.borrow().id;
 						let id_l = left.borrow().id;
+						let leaves_l = leaves.get(&id_l).unwrap();
 						let id_r = right.borrow().id;
-						// PL: keep track of leaves and weight of counting variables from current node
-						let new_leaves =
-							vec![leaves.remove(&id_l).unwrap(), leaves.remove(&id_r).unwrap()]
-								.concat();
-						leaves.insert(id, new_leaves);
+						let leaves_r = leaves.get(&id_r).unwrap();
+
+						// PL: keep track of weight of counting variables from current node (we keep track of the leaves towards the end)
 						let new_weight =
 							weight.remove(&id_l).unwrap() + weight.remove(&id_r).unwrap();
 						weight.insert(id, new_weight);
@@ -2312,9 +2452,13 @@ impl TotalizerEncoder {
 								continue;
 							}
 							// PL: derive C^->_reif(y^\eta_d)
-							let constraint_right =
-								constraint_reif_right(id, d, leaves.get(&id).unwrap());
+							let constraint_right = constraint_reif_right(id, d, leaves_l, leaves_r);
 							file = write_reif_right(file, id, d, &constraint_right);
+							file = write_sanity_check(
+								file,
+								&constraint_right,
+								constraint_id.len() + 1,
+							);
 							constraint_id.push(constraint_right);
 
 							// PL: derive C^<-_reif(y^\eta_d)
@@ -2322,9 +2466,12 @@ impl TotalizerEncoder {
 								id,
 								d,
 								*weight.get(&id).unwrap(),
-								leaves.get(&id).unwrap(),
+								leaves_l,
+								leaves_r,
 							);
 							file = write_reif_left(file, id, d, &constraint_left);
+							file =
+								write_sanity_check(file, &constraint_left, constraint_id.len() + 1);
 							constraint_id.push(constraint_left);
 						}
 
@@ -2339,78 +2486,73 @@ impl TotalizerEncoder {
 							Rc::clone(&parent),
 						));
 
-						// PL: derive every C1 and C2 clause (depending on the cmp and the value of EQUALIZE_INTERMEDIATES)
+						// PL: derive every C1 clause and possibly every C2 clause
+						let derive_c2 =
+							cmp == &LimitComp::Equal || (!at_root && Self::EQUALIZE_INTERMEDIATES);
 						// TODOPL: there HAS to be a more efficient way to do this
+						let last_a = left.borrow().dom.iter().flatten().max().unwrap();
+						let last_b = right.borrow().dom.iter().flatten().max().unwrap();
+						let last_c = parent.borrow().dom.iter().flatten().max().unwrap();
 						for a in left.borrow().dom.iter().flatten() {
 							for b in right.borrow().dom.iter().flatten() {
 								for c in parent.borrow().dom.iter().flatten() {
 									// PL: derive C1 clauses
-
-									// if c != 0 {
-									// 	if !at_root && a + b == c {
-									// 		// file.write_all("pol ".as_bytes())
-									// 		// 	.expect("Unable to write to proof file");
-									// 		if a != 0 {
-									// 			file.write_all("~".as_bytes())
-									// 				.expect("Unable to write to proof file");
-									// 			// if the left children is a leaf
-									// 			if id_l <= last_leaf {
-									// 				file = write_input_var(file, id_l);
-									// 			} else {
-									// 				file = write_counting_var(file, id_l, a);
-									// 			}
-									// 			file.write_all(" ".as_bytes())
-									// 				.expect("Unable to write to proof file");
-									// 		}
-									// 		if b != 0 {
-									// 			file.write_all("~".as_bytes())
-									// 				.expect("Unable to write to proof file");
-									// 			// if the right children is a leaf
-									// 			if id_r <= last_leaf {
-									// 				file = write_input_var(file, id_r);
-									// 			} else {
-									// 				file = write_counting_var(file, id_r, b);
-									// 			}
-									// 			file.write_all(" ".as_bytes())
-									// 				.expect("Unable to write to proof file");
-									// 		}
-									// 		file = write_counting_var(file, id, c);
-									// 		file.write_all(" >= 1;\n".as_bytes())
-									// 			.expect("Unable to write to proof file");
-									// 	} else if a + b > k {
-									// 		// file.write_all("pol ".as_bytes())
-									// 		// 	.expect("Unable to write to proof file");
-									// 		if a != 0 {
-									// 			file.write_all("~".as_bytes())
-									// 				.expect("Unable to write to proof file");
-									// 			// if the left children is a leaf
-									// 			if id_l <= last_leaf {
-									// 				file = write_input_var(file, id_l);
-									// 			} else {
-									// 				file = write_counting_var(file, id_l, a);
-									// 			}
-									// 			file.write_all(" ".as_bytes())
-									// 				.expect("Unable to write to proof file");
-									// 		}
-									// 		if b != 0 {
-									// 			file.write_all("~".as_bytes())
-									// 				.expect("Unable to write to proof file");
-									// 			// if the right children is a leaf
-									// 			if id_r <= last_leaf {
-									// 				file = write_input_var(file, id_r);
-									// 			} else {
-									// 				file = write_counting_var(file, id_r, b);
-									// 			}
-									// 			file.write_all(" ".as_bytes())
-									// 				.expect("Unable to write to proof file");
-									// 		}
-									// 		file.write_all(">= 1;\n".as_bytes())
-									// 			.expect("Unable to write to proof file");
-									// 	}
+									if (!at_root && c > 0 && a + b == c)
+										|| (c == last_c && a + b > k)
+									{
+										let clause_c1 =
+											clause_c1(id, id_l, id_r, a, b, c, last_leaf);
+										file = write_clause_c1(
+											file,
+											id,
+											id_l,
+											leaves.get(&id_l).unwrap(),
+											id_r,
+											leaves.get(&id_r).unwrap(),
+											a,
+											b,
+											c,
+											last_leaf,
+										);
+										file = write_sanity_check(
+											file,
+											&clause_c1,
+											constraint_id.len() + 1,
+										);
+										constraint_id.push(clause_c1);
+									}
+									// PL: derive C2 clauses
+									// if derive_c2 && a + b == c && a > 0 && b > 0 {
+									// 	let clause_c1 =
+									// 		clause_c1(id, id_l, id_r, a, b, c, last_leaf);
+									// 	file = write_clause_c1(
+									// 		file,
+									// 		id,
+									// 		id_l,
+									// 		leaves.get(&id_l).unwrap(),
+									// 		id_r,
+									// 		leaves.get(&id_r).unwrap(),
+									// 		a,
+									// 		b,
+									// 		c,
+									// 		last_leaf,
+									// 	);
+									// 	file = write_sanity_check(
+									// 		file,
+									// 		&clause_c1,
+									// 		constraint_id.len() + 1,
+									// 	);
+									// 	constraint_id.push(clause_c1);
 									// }
 								}
 							}
 						}
+
+						// PL: keep track of leaves of counting variables from current node (we cannot do this before because we use borrowed values)
+						let new_leaves =
+							vec![leaves.remove(&id_l).unwrap(), leaves.remove(&id_r).unwrap()]
+								.concat();
+						leaves.insert(id, new_leaves);
 
 						next_layer.push(parent);
 					}
