@@ -9,7 +9,6 @@
 //! [`NormalizedBoolLinear`] can also be used.
 
 use itertools::Itertools;
-// use pigeons::{OperationSequence, VarLike};
 
 use crate::{
 	bool_linear::{Comparator, LimitComp, NormalizedBoolLinear},
@@ -116,14 +115,6 @@ impl Checker for CardinalityOne {
 	}
 }
 
-fn new_proof(
-	num_constraints: usize,
-	optimization: bool,
-) -> pigeons::Proof<tempfile::NamedTempFile> {
-	let file = tempfile::NamedTempFile::new().expect("failed to create temporary proof file");
-	pigeons::Proof::new(file, num_constraints, optimization).expect("failed to start proof")
-}
-
 impl<DB: ClauseDatabase + ?Sized> Encoder<DB, CardinalityOne> for LadderEncoder {
 	#[cfg_attr(
 	any(feature = "tracing", test),
@@ -148,17 +139,6 @@ impl<DB: ClauseDatabase + ?Sized> Encoder<DB, CardinalityOne> for LadderEncoder 
 		if card1.cmp == LimitComp::Equal {
 			db.add_clause([!a])?;
 		}
-
-		// let mut proof = new_proof(2, false);
-
-		// proof
-		// 	.operations(
-		// 		&(OperationSequence::from(pigeons::ConstraintId::abs(1))
-		// 			+ card1.lits.first().unwrap().pos_axiom()),
-		// 	)
-		// 	.unwrap();
-		// print!("{:?}", proof);
-		// print!("{:?}", proof.writer);
 		Ok(())
 	}
 }
@@ -183,94 +163,6 @@ impl<Db: ClauseDatabase + ?Sized> Encoder<Db, CardinalityOne> for PairwiseEncode
 
 #[cfg(test)]
 pub(crate) mod tests {
-
-	type OpsSeq = OperationSequence<&'static str>;
-
-	use std::{
-		fs::File,
-		io::{BufRead, BufReader},
-		path::Path,
-		process::Command,
-	};
-
-	use pigeons::{
-		Conclusion, ConstraintId as Id, OperationSequence, OutputGuarantee, Proof, VarLike,
-	};
-
-	use traced_test::test;
-	fn new_proof(num_constraints: usize, optimization: bool) -> Proof<tempfile::NamedTempFile> {
-		let file = tempfile::NamedTempFile::new().expect("failed to create temporary proof file");
-		Proof::new(file, num_constraints, optimization).expect("failed to start proof")
-	}
-
-	#[test]
-	fn all_diff() {
-		let mut proof = new_proof(15, false);
-		let new1 = proof
-			.operations(&(OpsSeq::from(Id::abs(3)) + Id::abs(4) + Id::abs(5)))
-			.unwrap();
-		let new2 = proof
-			.operations(
-				&(OpsSeq::from(Id::abs(14))
-					+ Id::abs(15) + "y_x1_8".pos_axiom()
-					+ "y_x2_8".pos_axiom()
-					+ "y_x1_9".pos_axiom()
-					+ "y_x2_9".pos_axiom()),
-			)
-			.unwrap();
-		let contrad = proof.operations(&(OpsSeq::from(new1) + new2)).unwrap();
-		let proof_file = proof
-			.conclude::<&'static str>(
-				OutputGuarantee::None,
-				&Conclusion::Unsat(Some(contrad.into())),
-			)
-			.unwrap();
-		let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-		verify_proof(format!("{manifest}/data/all_diff.opb"), proof_file.path());
-	}
-
-	fn print_file<P: AsRef<Path>>(path: P) {
-		println!("{}", path.as_ref().display());
-		for line in BufReader::new(File::open(path).expect("could not open file")).lines() {
-			println!("{}", line.unwrap());
-		}
-	}
-
-	fn verify_proof<P1: AsRef<Path>, P2: AsRef<Path>>(instance: P1, proof: P2) {
-		print_file(&proof);
-		if let Ok(veripb) = std::env::var("VERIPB_CHECKER") {
-			println!("start checking proof");
-			let out = Command::new(veripb)
-				.arg(instance.as_ref())
-				.arg(&proof.as_ref())
-				.output()
-				.expect("failed to run veripb");
-			if out.status.success() {
-				return;
-			}
-			panic!("verification failed: {out:?}")
-		} else {
-			println!("`$VERIPB_CHECKER` not set, omitting proof checking");
-		}
-	}
-
-	#[test]
-	fn test_cert() {
-		let cnf = &mut Cnf::default();
-		let (x, y, z) = cnf.new_lits();
-		LadderEncoder::default()
-			.encode(
-				cnf,
-				&CardinalityOne {
-					lits: vec![x, y, z],
-					cmp: LimitComp::LessEq,
-				},
-			)
-			.unwrap();
-		// TODO add VeriPB and assert verified proof
-		print!("{}", cnf);
-	}
-
 	macro_rules! card1_test_suite {
 		($mod_name:ident, $encoder:expr) => {
 			mod $mod_name {

@@ -2,7 +2,7 @@
 
 ## Roadmap meeting 2025-10-30
 
-- [ ] Finish implementing => direction
+- [x] Finish implementing => direction
 - [ ] Pipeline read input -> output proof -> check with VeriPB and implement it in some tests
 - [ ] Implement <= direction
 - [ ] Improve the code (pigeons + avoid retrieving clauses two times)

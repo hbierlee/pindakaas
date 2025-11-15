@@ -240,9 +240,7 @@ use std::{
 	slice,
 };
 
-use cardinality_one::CardinalityOne;
 use itertools::{traits::HomogeneousTuple, Itertools};
-use pigeons::{ConstraintLike, VarLike};
 
 pub use crate::helpers::AsDynClauseDatabase;
 use crate::{
@@ -528,19 +526,6 @@ pub enum IntEncoding<'a> {
 /// their negations
 pub struct Lit(NonZeroI32);
 
-impl VarLike for Lit {
-	type Formatter = Self;
-}
-
-impl ConstraintLike<Lit> for CardinalityOne {
-	fn rhs(&self) -> isize {
-		1
-	}
-
-	fn sum_iter(&self) -> impl Iterator<Item = (isize, pigeons::Axiom<Lit>)> {
-		self.lits.iter().map(|l| (1, l.pos_axiom()))
-	}
-}
 
 /// Result is a type alias for [`std::result::Result`] that by default returns
 /// an empty value, or the [`Unsatisfiable`] error type.
