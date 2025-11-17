@@ -23,9 +23,11 @@ use std::{
 	iter::once,
 	ops::{Add, AddAssign, Deref, DerefMut, Mul, MulAssign, Neg, Range, Sub, SubAssign},
 	rc::Rc,
+	vec,
 };
 
 use itertools::Itertools;
+use rangelist::RangeList;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::{
@@ -2109,6 +2111,12 @@ fn proof_end(mut file: File) -> File {
 	write_line_to_file(file, "end pseudo-Boolean proof;")
 }
 
+fn input_literal(id: usize) -> String {
+	let mut string = String::from("l");
+	string.push_str(&id.to_string());
+	string
+}
+
 fn counting_variable(id: usize, d: i64) -> String {
 	let mut string = String::from("y");
 	string.push_str(&id.to_string());
@@ -2117,10 +2125,31 @@ fn counting_variable(id: usize, d: i64) -> String {
 	string
 }
 
-fn input_literal(id: usize) -> String {
-	let mut string = String::from("l");
-	string.push_str(&id.to_string());
-	string
+fn sanity_check(file: File, constraint: &str, constraint_id: usize) -> File {
+	let mut string = String::from("e ");
+	string.push_str(constraint);
+	string.push_str(" : ");
+	string.push_str(&constraint_id.to_string());
+	string.push_str(";");
+	write_line_to_file(file, &string)
+}
+
+fn is_deleted(file: File, constraint: &str) -> File {
+	let mut string = String::from("is_deleted ");
+	string.push_str(constraint);
+	string.push_str(";");
+	write_line_to_file(file, &string)
+}
+
+fn move_to_core(file: File, constraint_id: usize) -> File {
+	let mut string = String::from("core id");
+	for i in 1..=constraint_id {
+		string.push_str(" ");
+		string.push_str(&i.to_string());
+	}
+	string.push_str(";");
+
+	write_line_to_file(file, &string)
 }
 
 fn constraint_input(
@@ -2163,14 +2192,44 @@ fn constraint_input(
 	constraint_leq.push_str(">= ");
 	constraint_leq.push_str(&(s - k).to_string());
 
-	(constraint_geq, constraint_leq)
+	(constraint_leq, constraint_geq)
 }
 
-fn derive_constraint_input(file: File, constraint: &str) -> File {
+fn write_constraint_input(file: File, constraint: &str) -> File {
 	let mut string = String::from(constraint);
 	string.push_str(";");
 
 	write_line_to_file(file, &string)
+}
+
+fn delete_constraint_input_leq(mut file: File, id: usize, k: i64, weight: i64) -> File {
+	file = write_line_to_file(file, "del id 1 : : subproof");
+
+	let mut string = String::from("\tpol @unit_leq ");
+	string.push_str(&(weight - k).to_string());
+	string.push_str(" * @reif_l_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&(k + 1).to_string());
+	string.push_str(" + -1 +;");
+	file = write_line_to_file(file, &string);
+
+	write_line_to_file(file, "qed : -1;")
+}
+
+fn delete_constraint_input_geq(mut file: File, id: usize, k: i64) -> File {
+	file = write_line_to_file(file, "del id 2 : : subproof");
+
+	let mut string = String::from("\tpol @unit_geq ");
+	string.push_str(&k.to_string());
+	string.push_str(" * @reif_r_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&k.to_string());
+	string.push_str(" + -1 +;");
+	file = write_line_to_file(file, &string);
+
+	write_line_to_file(file, "qed : -1;")
 }
 
 fn constraint_reif_right(
@@ -2224,6 +2283,94 @@ fn derive_reif_right(file: File, id: usize, d: i64, constraint: &str) -> File {
 	write_line_to_file(file, &string)
 }
 
+fn delete_reif_right(
+	mut file: File,
+	id: usize,
+	d_prev: i64,
+	d: i64,
+	id_l: usize,
+	dom: &RangeList<i64>,
+	dom_l: &RangeList<i64>,
+	id_r: usize,
+	dom_r: &RangeList<i64>,
+	leaves_l: &Vec<Rc<RefCell<IntVar>>>,
+	leaves_r: &Vec<Rc<RefCell<IntVar>>>,
+	weight_l: i64,
+	weight_r: i64,
+	k: i64,
+) -> File {
+	let mut string = String::from("del id @reif_r_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" : : subproof");
+	file = write_line_to_file(file, &string);
+
+	// Derive y^id_d >= 1
+	let mut string = String::from("\t@countingvar pol -1 ");
+	for l in leaves_l {
+		string.push_str(" ");
+		string.push_str(&input_literal(l.borrow().id));
+		string.push_str(" w");
+	}
+	for l in leaves_r {
+		string.push_str(" ");
+		string.push_str(&input_literal(l.borrow().id));
+		string.push_str(" w");
+	}
+	string.push_str(" s;");
+	file = write_line_to_file(file, &string);
+
+	// Derive leaves inequality
+	let mut string = String::from("\t@leaves pol -2 y");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" w;");
+	file = write_line_to_file(file, &string);
+
+	// Derive y^l_a+1 + y^r_b+1 >= 1
+	let mut a = 0;
+	let mut b = 0;
+	'outer: for i in dom_l.iter().flatten() {
+		for j in dom_r.iter().flatten() {
+			if i + j == d_prev {
+				a = i;
+				b = j;
+				break 'outer;
+			}
+		}
+	}
+	let mut string = String::from("\tpol @countingvar @c2_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&a.to_string());
+	string.push_str("_");
+	string.push_str(&b.to_string());
+	string.push_str("_");
+	string.push_str(&d_prev.to_string());
+	string.push_str(" +;");
+	file = write_line_to_file(file, &string);
+
+	// Apply Lemma 17
+	let a_oub = if weight_l > k { k + 1 } else { 0 };
+	for (i, a_next) in dom_l.iter().flatten().chain([a_oub]).tuple_windows() {
+		if i < a || a_next == 0 {
+			continue;
+		}
+		let mut string = String::from("\tpol -1 ");
+		string.push_str(&a_next.to_string());
+		string.push_str(" * @reif_r_");
+		string.push_str(&id_l.to_string());
+		string.push_str("_");
+		string.push_str(&a_next.to_string());
+		string.push_str(" + @leaves +;");
+		file = write_line_to_file(file, &string);
+	}
+
+	write_line_to_file(file, "qed : -1;")
+}
+
 fn constraint_reif_left(
 	id: usize,
 	d: i64,
@@ -2274,6 +2421,24 @@ fn derive_reif_left(file: File, id: usize, d: i64, constraint: &str) -> File {
 	string.push_str(" -> 1;");
 
 	write_line_to_file(file, &string)
+}
+
+fn delete_reif_left(mut file: File, id: usize, d: i64) -> File {
+	let mut string = String::from("del id @reif_l_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" : : subproof");
+	file = write_line_to_file(file, &string);
+
+	let mut string = String::from("\tpol @streif_l_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" -1 +;");
+	file = write_line_to_file(file, &string);
+
+	write_line_to_file(file, "qed : -1;")
 }
 
 fn constraint_streif_left(
@@ -2337,7 +2502,7 @@ fn clause_c1(
 	b: i64,
 	c: i64,
 	last_leaf: usize,
-	k: i64
+	k: i64,
 ) -> String {
 	let mut string = String::new();
 	if a != 0 {
@@ -2373,21 +2538,21 @@ fn clause_c1(
 	}
 	string.push_str(">= 1");
 
-	return string;
+	string
 }
 
 fn derive_clause_c1(
 	file: File,
 	id: usize,
 	id_l: usize,
-	leaves_left: &Vec<Rc<RefCell<IntVar>>>,
+	leaves_l: &Vec<Rc<RefCell<IntVar>>>,
 	id_r: usize,
-	leaves_right: &Vec<Rc<RefCell<IntVar>>>,
+	leaves_r: &Vec<Rc<RefCell<IntVar>>>,
 	a: i64,
 	b: i64,
 	c: i64,
 	last_leaf: usize,
-	k: i64
+	k: i64,
 ) -> File {
 	let mut string = String::from("@c1_");
 	string.push_str(&id.to_string());
@@ -2433,7 +2598,7 @@ fn derive_clause_c1(
 
 	// weaken unnecessary literals
 	if a == 0 {
-		for l in leaves_left {
+		for l in leaves_l {
 			string.push_str(" ");
 			string.push_str(&input_literal(l.borrow().id));
 			string.push_str(" w");
@@ -2441,7 +2606,7 @@ fn derive_clause_c1(
 	}
 
 	if b == 0 {
-		for l in leaves_right {
+		for l in leaves_r {
 			string.push_str(" ");
 			string.push_str(&input_literal(l.borrow().id));
 			string.push_str(" w");
@@ -2494,16 +2659,16 @@ fn clause_c2(
 	string.push_str(" ");
 	string.push_str(">= 1");
 
-	return string;
+	string
 }
 
 fn derive_clause_c2(
 	file: File,
 	id: usize,
 	id_l: usize,
-	leaves_left: &Vec<Rc<RefCell<IntVar>>>,
+	leaves_l: &Vec<Rc<RefCell<IntVar>>>,
 	id_r: usize,
-	leaves_right: &Vec<Rc<RefCell<IntVar>>>,
+	leaves_r: &Vec<Rc<RefCell<IntVar>>>,
 	a: i64,
 	b: i64,
 	c: i64,
@@ -2552,7 +2717,7 @@ fn derive_clause_c2(
 
 	// weaken unnecessary literals
 	if a_next == 0 {
-		for l in leaves_left {
+		for l in leaves_l {
 			string.push_str(" ");
 			string.push_str(&input_literal(l.borrow().id));
 			string.push_str(" w");
@@ -2560,7 +2725,7 @@ fn derive_clause_c2(
 	}
 
 	if b_next == 0 {
-		for l in leaves_right {
+		for l in leaves_r {
 			string.push_str(" ");
 			string.push_str(&input_literal(l.borrow().id));
 			string.push_str(" w");
@@ -2575,12 +2740,41 @@ fn derive_clause_c2(
 	write_line_to_file(file, &string)
 }
 
-fn derive_sanity_check(file: File, constraint: &str, constraint_id: usize) -> File {
-	let mut string = String::from("e ");
-	string.push_str(constraint);
-	string.push_str(" : ");
-	string.push_str(&constraint_id.to_string());
-	string.push_str(";");
+fn clause_unit_leq(id: usize, k: i64) -> String {
+	let mut clause = String::from("1 ~");
+	clause.push_str(&counting_variable(id, k + 1));
+	clause.push_str(" >= 1");
+
+	clause
+}
+
+fn derive_clause_unit_leq(file: File, id: usize, k: i64) -> File {
+	let mut string = String::from("@unit_leq ");
+	string.push_str("pol 1 @reif_r_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&(k + 1).to_string());
+	string.push_str(" + s;");
+
+	write_line_to_file(file, &string)
+}
+
+fn clause_unit_geq(id: usize, k: i64) -> String {
+	let mut clause = String::from("1 ");
+	clause.push_str(&counting_variable(id, k));
+	clause.push_str(" >= 1");
+
+	clause
+}
+
+fn derive_clause_unit_geq(file: File, id: usize, k: i64) -> File {
+	let mut string = String::from("@unit_geq ");
+	string.push_str("pol 2 @reif_l_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&k.to_string());
+	string.push_str(" + s;");
+
 	write_line_to_file(file, &string)
 }
 
@@ -2593,26 +2787,26 @@ impl TotalizerEncoder {
 			.collect_vec();
 
 		// PL: initialize VeriPB input file
-		let file = proof_input_init("proof.opb");
-		let (constraint_input_geq, constraint_input_leq) = constraint_input(&layer, cmp, k);
+		let mut file = proof_input_init("proof.opb");
+		let (constraint_input_leq, constraint_input_geq) = constraint_input(&layer, cmp, k);
 		if cmp == &LimitComp::Equal {
-			let file = derive_constraint_input(file, &constraint_input_geq);
-			_ = derive_constraint_input(file, &constraint_input_leq);
+			file = write_constraint_input(file, &constraint_input_leq);
+			_ = write_constraint_input(file, &constraint_input_geq);
 		} else {
-			_ = derive_constraint_input(file, &constraint_input_leq);
+			_ = write_constraint_input(file, &constraint_input_leq);
 		}
 
 		// PL: initialize VeriPB proof file
 		let mut file = proof_init("proof.pbp");
-		// PL: create constraint id vector
+		// PL: initialize constraint id vector
 		let mut constraint_id: Vec<String> = Vec::new();
 		if cmp == &LimitComp::Equal {
-			file = derive_sanity_check(file, &constraint_input_geq, constraint_id.len() + 1);
-			constraint_id.push(constraint_input_geq);
-			file = derive_sanity_check(file, &constraint_input_leq, constraint_id.len() + 1);
+			file = sanity_check(file, &constraint_input_leq, constraint_id.len() + 1);
 			constraint_id.push(constraint_input_leq);
+			file = sanity_check(file, &constraint_input_geq, constraint_id.len() + 1);
+			constraint_id.push(constraint_input_geq);
 		} else {
-			file = derive_sanity_check(file, &constraint_input_leq, constraint_id.len() + 1);
+			file = sanity_check(file, &constraint_input_leq, constraint_id.len() + 1);
 			constraint_id.push(constraint_input_leq);
 		}
 
@@ -2670,55 +2864,24 @@ impl TotalizerEncoder {
 						let weight_p = weight_l + weight_r;
 
 						// PL: derive reification constraints of counting variables from current node
-						for d in parent.borrow().dom.iter().flatten() {
+						// we add out of bounds values to the end of the iterators, equal to 0 when we do not need to create an out of bounds strong reification constraint
+						let d_oub = if weight_p > k { k + 1 } else { 0 };
+						for d in parent.borrow().dom.iter().flatten().chain([d_oub]) {
 							if d == 0 {
 								continue;
 							}
 							// Derive C^->_reif(y^\eta_d)
 							let constraint_right = constraint_reif_right(id, d, leaves_l, leaves_r);
 							file = derive_reif_right(file, id, d, &constraint_right);
-							file = derive_sanity_check(
-								file,
-								&constraint_right,
-								constraint_id.len() + 1,
-							);
+							file = sanity_check(file, &constraint_right, constraint_id.len() + 1);
 							constraint_id.push(constraint_right);
 
 							// Derive C^<-_reif(y^\eta_d)
 							let constraint_left =
 								constraint_reif_left(id, d, weight_p, leaves_l, leaves_r);
 							file = derive_reif_left(file, id, d, &constraint_left);
-							file = derive_sanity_check(
-								file,
-								&constraint_left,
-								constraint_id.len() + 1,
-							);
+							file = sanity_check(file, &constraint_left, constraint_id.len() + 1);
 							constraint_id.push(constraint_left);
-
-							// If necessary, derive reification constraints for an out of bounds counting variable
-							if d == last_p && weight_p > k {
-								// Derive C^->_reif(y^\eta_k+1)
-								let constraint_right =
-									constraint_reif_right(id, k + 1, leaves_l, leaves_r);
-								file = derive_reif_right(file, id, k + 1, &constraint_right);
-								file = derive_sanity_check(
-									file,
-									&constraint_right,
-									constraint_id.len() + 1,
-								);
-								constraint_id.push(constraint_right);
-
-								// Derive C^<-_reif(y^\eta_k+1)
-								let constraint_left =
-									constraint_reif_left(id, k + 1, weight_p, leaves_l, leaves_r);
-								file = derive_reif_left(file, id, k + 1, &constraint_left);
-								file = derive_sanity_check(
-									file,
-									&constraint_left,
-									constraint_id.len() + 1,
-								);
-								constraint_id.push(constraint_left);
-							}
 						}
 
 						model.cons.push(Lin::tern(
@@ -2752,11 +2915,8 @@ impl TotalizerEncoder {
 											last_leaf,
 											k,
 										);
-										file = derive_sanity_check(
-											file,
-											&clause_c1,
-											constraint_id.len() + 1,
-										);
+										file =
+											sanity_check(file, &clause_c1, constraint_id.len() + 1);
 										constraint_id.push(clause_c1);
 									}
 								}
@@ -2766,39 +2926,25 @@ impl TotalizerEncoder {
 						// PL: derive strong reification and C2 clauses
 						if cmp == &LimitComp::Equal || (!at_root && Self::EQUALIZE_INTERMEDIATES) {
 							// Derive left strong reification constraints of counting variables from current node
-							for (d_prev, d) in parent.borrow().dom.iter().flatten().tuple_windows()
+							// we add out of bounds values to the end of the iterators, equal to 0 when we do not need to create an out of bounds strong reification constraint
+							let d_oub = if weight_p > k { k + 1 } else { 0 };
+							// we add 0 to the beginning of the iterator to include the root node first strong reification
+							for (d_prev, d) in [0]
+								.into_iter()
+								.chain(parent.borrow().dom.iter().flatten().chain([d_oub]))
+								.tuple_windows()
 							{
+								if d == 0 {
+									continue;
+								}
 								// Derive C^<-_streif(y^\eta_d)
 								let constraint_streif = constraint_streif_left(
 									id, d_prev, d, weight_p, leaves_l, leaves_r,
 								);
 								file = derive_streif_left(file, id, d, &constraint_streif);
-								file = derive_sanity_check(
-									file,
-									&constraint_streif,
-									constraint_id.len() + 1,
-								);
+								file =
+									sanity_check(file, &constraint_streif, constraint_id.len() + 1);
 								constraint_id.push(constraint_streif);
-
-								// If necessary, derive left strong reification an out of bounds counting variable
-								if d == last_p && weight_p > k {
-									// Derive C^<-_streif(y^\eta_k+1)
-									let constraint_streif = constraint_streif_left(
-										id,
-										k,
-										k + 1,
-										weight_p,
-										leaves_l,
-										leaves_r,
-									);
-									file = derive_streif_left(file, id, k + 1, &constraint_streif);
-									file = derive_sanity_check(
-										file,
-										&constraint_streif,
-										constraint_id.len() + 1,
-									);
-									constraint_id.push(constraint_streif);
-								}
 							}
 
 							// Derive C2 clauses
@@ -2819,7 +2965,7 @@ impl TotalizerEncoder {
 								.dom
 								.iter()
 								.flatten()
-								.chain(vec![a_oub])
+								.chain([a_oub])
 								.tuple_windows()
 							{
 								for (b, b_next) in right
@@ -2827,44 +2973,19 @@ impl TotalizerEncoder {
 									.dom
 									.iter()
 									.flatten()
-									.chain(vec![b_oub])
+									.chain([b_oub])
 									.tuple_windows()
 								{
-									// for the case C^root_2(0, 0, 0) (since we don't include 0 in the root's domain)
-									if at_root && a == 0 && b == 0 {
-										let clause_c2 =
-											clause_c2(id, id_l, id_r, a_next, b_next, k, last_leaf);
-										file = derive_clause_c2(
-											file,
-											id,
-											id_l,
-											leaves.get(&id_l).unwrap(),
-											id_r,
-											leaves.get(&id_r).unwrap(),
-											0,
-											0,
-											0,
-											a_next,
-											b_next,
-											k,
-											last_leaf,
-										);
-										file = derive_sanity_check(
-											file,
-											&clause_c2,
-											constraint_id.len() + 1,
-										);
-										constraint_id.push(clause_c2);
-									}
-									for (c, c_next) in parent
-										.borrow()
-										.dom
-										.iter()
-										.flatten()
-										.chain(vec![c_oub])
+									// we add 0 to the beginning of this iterator to include the case C^root_2(0, 0, 0)
+									for (c, c_next) in [0]
+										.into_iter()
+										.chain(parent.borrow().dom.iter().flatten().chain([c_oub]))
 										.tuple_windows()
 									{
-										if c_next > 0 && a + b == c {
+										if c_next == 0 {
+											continue;
+										}
+										if a + b == c {
 											let clause_c2 = clause_c2(
 												id, id_l, id_r, a_next, b_next, c_next, last_leaf,
 											);
@@ -2883,7 +3004,7 @@ impl TotalizerEncoder {
 												c_next,
 												last_leaf,
 											);
-											file = derive_sanity_check(
+											file = sanity_check(
 												file,
 												&clause_c2,
 												constraint_id.len() + 1,
@@ -2892,6 +3013,57 @@ impl TotalizerEncoder {
 										}
 									}
 								}
+							}
+						}
+
+						// PL: derive unit clauses
+						if at_root {
+							// Derive leq unit clause
+							let clause_unit_leq = clause_unit_leq(id, k);
+							file = derive_clause_unit_leq(file, id, k);
+							file = sanity_check(file, &clause_unit_leq, constraint_id.len() + 1);
+							constraint_id.push(clause_unit_leq);
+
+							// Derive geq unit clause
+							if cmp == &LimitComp::Equal {
+								let clause_unit_leq = clause_unit_geq(id, k);
+								file = derive_clause_unit_geq(file, id, k);
+								file =
+									sanity_check(file, &clause_unit_leq, constraint_id.len() + 1);
+								constraint_id.push(clause_unit_leq);
+							}
+						}
+
+						// PL: delete input constraints
+						if at_root {
+							// Before deleting anything we move all derived constraints to the core (we will need that for the subproofs)
+							file = move_to_core(file, constraint_id.len());
+							file = delete_constraint_input_leq(file, id, k, weight_p);
+							file = is_deleted(file, &constraint_id[0]);
+							if cmp == &LimitComp::Equal {
+								file = delete_constraint_input_geq(file, id, k);
+								file = is_deleted(file, &constraint_id[1]);
+							}
+
+							// Delete reification constraints
+							for (d_prev, d) in [0, k, k + 1].into_iter().tuple_windows() {
+								file = delete_reif_left(file, id, d);
+								file = delete_reif_right(
+									file,
+									id,
+									d_prev,
+									d,
+									id_l,
+									&parent.borrow().dom,
+									&left.borrow().dom,
+									id_r,
+									&right.borrow().dom,
+									leaves_l,
+									leaves_r,
+									weight_l,
+									weight_r,
+									k,
+								)
 							}
 						}
 
@@ -2909,6 +3081,8 @@ impl TotalizerEncoder {
 			}
 			layer = next_layer;
 		}
+
+		// PL: end proof
 		_ = proof_end(file);
 
 		model
