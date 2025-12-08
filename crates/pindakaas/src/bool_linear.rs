@@ -2129,7 +2129,13 @@ fn sanity_check(file: File, constraint: &str, constraint_id: usize) -> File {
 	let mut string = String::from("e ");
 	string.push_str(constraint);
 	string.push_str(" : ");
-	string.push_str(&constraint_id.to_string());
+	if constraint_id > 0 {
+		string.push_str(&constraint_id.to_string());
+	}
+	// constraint_id = 0 means we check the last introduced constraint
+	else {
+		string.push_str("-1");
+	}
 	string.push_str(";");
 	write_line_to_file(file, &string)
 }
@@ -2203,7 +2209,7 @@ fn write_constraint_input(file: File, constraint: &str) -> File {
 }
 
 fn delete_constraint_input_leq(mut file: File, id: usize, k: i64, weight: i64) -> File {
-	file = write_line_to_file(file, "del id 1 : : subproof");
+	file = write_line_to_file(file, "delc 1 : : subproof");
 
 	let mut string = String::from("\tpol @unit_leq ");
 	string.push_str(&(weight - k).to_string());
@@ -2218,7 +2224,7 @@ fn delete_constraint_input_leq(mut file: File, id: usize, k: i64, weight: i64) -
 }
 
 fn delete_constraint_input_geq(mut file: File, id: usize, k: i64) -> File {
-	file = write_line_to_file(file, "del id 2 : : subproof");
+	file = write_line_to_file(file, "delc 2 : : subproof");
 
 	let mut string = String::from("\tpol @unit_geq ");
 	string.push_str(&k.to_string());
@@ -2286,10 +2292,10 @@ fn derive_reif_right(file: File, id: usize, d: i64, constraint: &str) -> File {
 fn delete_reif_right(
 	mut file: File,
 	id: usize,
+	_dom: &RangeList<i64>,
 	d_prev: i64,
 	d: i64,
 	id_l: usize,
-	dom: &RangeList<i64>,
 	dom_l: &RangeList<i64>,
 	id_r: usize,
 	dom_r: &RangeList<i64>,
@@ -2297,9 +2303,21 @@ fn delete_reif_right(
 	leaves_r: &Vec<Rc<RefCell<IntVar>>>,
 	weight_l: i64,
 	weight_r: i64,
+	last_leaf: usize,
 	k: i64,
 ) -> File {
-	let mut string = String::from("del id @reif_r_");
+	// If the right child is a leaf, derive reification constraints for it
+	if id_r <= last_leaf {
+		let constraint_reif_right_leaf = constraint_reif_right_leaf(id_r, weight_r);
+		file = derive_reif_right_leaf(file, id_r, weight_r, &constraint_reif_right_leaf);
+		file = sanity_check(file, &constraint_reif_right_leaf, 0);
+		let constraint_reif_left_leaf = constraint_reif_left_leaf(id_r, weight_r);
+		file = derive_reif_left_leaf(file, id_r, weight_r, &constraint_reif_left_leaf);
+		file = sanity_check(file, &constraint_reif_left_leaf, 0);
+		file = write_line_to_file(file, "core id -2 -1;");
+	}
+
+	let mut string = String::from("delc @reif_r_");
 	string.push_str(&id.to_string());
 	string.push_str("_");
 	string.push_str(&d.to_string());
@@ -2307,7 +2325,7 @@ fn delete_reif_right(
 	file = write_line_to_file(file, &string);
 
 	// Derive y^id_d >= 1
-	let mut string = String::from("\t@countingvar pol -1 ");
+	string = String::from("\t@countingvar pol -1 ");
 	for l in leaves_l {
 		string.push_str(" ");
 		string.push_str(&input_literal(l.borrow().id));
@@ -2322,10 +2340,8 @@ fn delete_reif_right(
 	file = write_line_to_file(file, &string);
 
 	// Derive leaves inequality
-	let mut string = String::from("\t@leaves pol -2 y");
-	string.push_str(&id.to_string());
-	string.push_str("_");
-	string.push_str(&d.to_string());
+	string = String::from("\t@leaves pol -2 ");
+	string.push_str(&counting_variable(id, d));
 	string.push_str(" w;");
 	file = write_line_to_file(file, &string);
 
@@ -2341,7 +2357,7 @@ fn delete_reif_right(
 			}
 		}
 	}
-	let mut string = String::from("\tpol @countingvar @c2_");
+	string = String::from("\tpol @countingvar @c2_");
 	string.push_str(&id.to_string());
 	string.push_str("_");
 	string.push_str(&a.to_string());
@@ -2351,24 +2367,72 @@ fn delete_reif_right(
 	string.push_str(&d_prev.to_string());
 	string.push_str(" +;");
 	file = write_line_to_file(file, &string);
-
-	// Apply Lemma 17
-	let a_oub = if weight_l > k { k + 1 } else { 0 };
-	for (i, a_next) in dom_l.iter().flatten().chain([a_oub]).tuple_windows() {
-		if i < a || a_next == 0 {
-			continue;
-		}
-		let mut string = String::from("\tpol -1 ");
-		string.push_str(&a_next.to_string());
-		string.push_str(" * @reif_r_");
-		string.push_str(&id_l.to_string());
+	// if the right disjunct is a leaf, we use its reification constraint as an alias to avoid simplifying it by accident
+	if id_r <= last_leaf && b == 0 {
+		string = String::from("\tpol -1 ");
+		string.push_str(&weight_r.to_string());
+		string.push_str(" * @reif_l_");
+		string.push_str(&id_r.to_string());
 		string.push_str("_");
-		string.push_str(&a_next.to_string());
-		string.push_str(" + @leaves +;");
+		string.push_str(&weight_r.to_string());
+		string.push_str(" + s;");
 		file = write_line_to_file(file, &string);
 	}
 
-	write_line_to_file(file, "qed : -1;")
+	// Derive y^r_b+1 >= 1
+	let oub_l = if weight_l > k { k + 1 } else { 0 };
+	'outer: for (i, a_next) in dom_l.iter().flatten().chain([oub_l]).tuple_windows() {
+		// Apply Lemma 17
+		if i < a || a_next == 0 {
+			continue;
+		}
+		let mut b_least = 0;
+		'outer: for j in dom_r.iter().flatten() {
+			if a_next + j >= d {
+				b_least = j;
+				break 'outer;
+			}
+		}
+		string = String::from("\tpol -1 ");
+		string.push_str(&a_next.to_string());
+		string.push_str(" *;");
+		file = write_line_to_file(file, &string);
+		if id_l > last_leaf {
+			string = String::from("\tpol -1 @reif_r_");
+			string.push_str(&id_l.to_string());
+			string.push_str("_");
+			string.push_str(&a_next.to_string());
+			string.push_str(" +;");
+			file = write_line_to_file(file, &string);
+		};
+		file = write_line_to_file(file, "\tpol -1 @leaves +;");
+		// substract (b_least + a_next - d) to the rightmost side (to go from -(d - a_next) to -b_least)
+		if b_least + a_next > d {
+			string = String::from("\tpol x1 ~x1 + ");
+			string.push_str(&(b_least + a_next - d).to_string());
+			string.push_str(" * -1 +;");
+			file = write_line_to_file(file, &string);
+		}
+		if id_r > last_leaf && b_least > 0 {
+			string = String::from("\tpol -1 @reif_r_");
+			string.push_str(&id_r.to_string());
+			string.push_str("_");
+			string.push_str(&b_least.to_string());
+			string.push_str(" +;");
+			file = write_line_to_file(file, &string);
+		};
+		file = write_line_to_file(file, "\tpol -1 s;");
+
+		// Apply Lemma 18
+		if b_least == 0 {
+			break 'outer;
+		}
+		for j in dom_l.iter().rev().flatten() {}
+	}
+
+	file = write_line_to_file(file, "qed : -1;");
+	file = delete_reif_right_leaf(file, id_r, weight_r);
+	delete_reif_left_leaf(file, id_r, weight_r)
 }
 
 fn constraint_reif_left(
@@ -2424,7 +2488,7 @@ fn derive_reif_left(file: File, id: usize, d: i64, constraint: &str) -> File {
 }
 
 fn delete_reif_left(mut file: File, id: usize, d: i64) -> File {
-	let mut string = String::from("del id @reif_l_");
+	let mut string = String::from("delc @reif_l_");
 	string.push_str(&id.to_string());
 	string.push_str("_");
 	string.push_str(&d.to_string());
@@ -2487,6 +2551,84 @@ fn derive_streif_left(file: File, id: usize, d: i64, constraint: &str) -> File {
 	string.push_str(&d.to_string());
 	string.push_str(" red ");
 	string.push_str(constraint);
+	string.push_str(" : ");
+	string.push_str(&counting_variable(id, d));
+	string.push_str(" -> 1;");
+
+	write_line_to_file(file, &string)
+}
+
+fn constraint_reif_right_leaf(id: usize, d: i64) -> String {
+	let mut constraint = String::from(&d.to_string());
+	constraint.push_str(" ~");
+	constraint.push_str(&counting_variable(id, d));
+	constraint.push_str(" ");
+	constraint.push_str(&d.to_string());
+	constraint.push_str(" ");
+	constraint.push_str(&input_literal(id));
+	constraint.push_str(" >= ");
+	constraint.push_str(&d.to_string());
+
+	constraint
+}
+
+fn derive_reif_right_leaf(file: File, id: usize, d: i64, constraint: &str) -> File {
+	let mut string = String::from("@reif_r_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" red ");
+	string.push_str(constraint);
+	string.push_str(" : ");
+	string.push_str(&counting_variable(id, d));
+	string.push_str(" -> 0;");
+
+	write_line_to_file(file, &string)
+}
+
+fn delete_reif_right_leaf(file: File, id: usize, d: i64) -> File {
+	let mut string = String::from("delc @reif_r_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" : ");
+	string.push_str(&counting_variable(id, d));
+	string.push_str(" -> 0;");
+
+	write_line_to_file(file, &string)
+}
+
+fn constraint_reif_left_leaf(id: usize, d: i64) -> String {
+	let mut constraint = String::from("1 ");
+	constraint.push_str(&counting_variable(id, d));
+	constraint.push_str(" ");
+	constraint.push_str(&d.to_string());
+	constraint.push_str(" ~");
+	constraint.push_str(&input_literal(id));
+	constraint.push_str(" >= 1");
+
+	constraint
+}
+
+fn derive_reif_left_leaf(file: File, id: usize, d: i64, constraint: &str) -> File {
+	let mut string = String::from("@reif_l_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
+	string.push_str(" red ");
+	string.push_str(constraint);
+	string.push_str(" : ");
+	string.push_str(&counting_variable(id, d));
+	string.push_str(" -> 1;");
+
+	write_line_to_file(file, &string)
+}
+
+fn delete_reif_left_leaf(file: File, id: usize, d: i64) -> File {
+	let mut string = String::from("delc @reif_l_");
+	string.push_str(&id.to_string());
+	string.push_str("_");
+	string.push_str(&d.to_string());
 	string.push_str(" : ");
 	string.push_str(&counting_variable(id, d));
 	string.push_str(" -> 1;");
@@ -2795,9 +2937,9 @@ impl TotalizerEncoder {
 		} else {
 			_ = write_constraint_input(file, &constraint_input_leq);
 		}
-
 		// PL: initialize VeriPB proof file
 		let mut file = proof_init("proof.pbp");
+
 		// PL: initialize constraint id vector
 		let mut constraint_id: Vec<String> = Vec::new();
 		if cmp == &LimitComp::Equal {
@@ -2863,10 +3005,41 @@ impl TotalizerEncoder {
 						let weight_r = weight.remove(&id_r).unwrap();
 						let weight_p = weight_l + weight_r;
 
+						// We will add out of bounds values to the end of the iterators, equal to 0 when no associated counting variable has been created
+						let oub_l = if weight_l > k && id_l > last_leaf {
+							k + 1
+						} else {
+							0
+						};
+						let oub_r = if weight_r > k && id_r > last_leaf {
+							k + 1
+						} else {
+							0
+						};
+						let oub_p = if weight_p > k { k + 1 } else { 0 };
+
+						// PL: if we proof log the <= direction, we will need to iterate over the full domain of the root node, so we add the following to the parent iterator
+						let pre_dom: RangeList<i64> = if cmp == &LimitComp::Equal && at_root {
+							left.borrow()
+								.dom
+								.iter()
+								.flatten()
+								.cartesian_product(right.borrow().dom.iter().flatten())
+								.map(|(a, b)| a + b)
+								.filter(|&d| d < k)
+								.map(|v| v..=v)
+								.collect()
+						} else {
+							[0].into_iter().map(|v| v..=v).collect()
+						};
+
 						// PL: derive reification constraints of counting variables from current node
-						// we add out of bounds values to the end of the iterators, equal to 0 when we do not need to create an out of bounds strong reification constraint
-						let d_oub = if weight_p > k { k + 1 } else { 0 };
-						for d in parent.borrow().dom.iter().flatten().chain([d_oub]) {
+						for d in pre_dom
+							.iter()
+							.chain(parent.borrow().dom.iter())
+							.flatten()
+							.chain([oub_p])
+						{
 							if d == 0 {
 								continue;
 							}
@@ -2898,7 +3071,11 @@ impl TotalizerEncoder {
 						// PL: Derive C1 clauses
 						for a in left.borrow().dom.iter().flatten() {
 							for b in right.borrow().dom.iter().flatten() {
-								for c in parent.borrow().dom.iter().flatten() {
+								for c in pre_dom.iter().chain(parent.borrow().dom.iter()).flatten()
+								{
+									if c == 0 {
+										continue;
+									}
 									if (c > 0 && a + b == c) || (c == last_p && a + b > c) {
 										let clause_c1 =
 											clause_c1(id, id_l, id_r, a, b, c, last_leaf, k);
@@ -2924,14 +3101,13 @@ impl TotalizerEncoder {
 						}
 
 						// PL: derive strong reification and C2 clauses
-						if cmp == &LimitComp::Equal || (!at_root && Self::EQUALIZE_INTERMEDIATES) {
+						if cmp == &LimitComp::Equal {
 							// Derive left strong reification constraints of counting variables from current node
-							// we add out of bounds values to the end of the iterators, equal to 0 when we do not need to create an out of bounds strong reification constraint
-							let d_oub = if weight_p > k { k + 1 } else { 0 };
-							// we add 0 to the beginning of the iterator to include the root node first strong reification
-							for (d_prev, d) in [0]
-								.into_iter()
-								.chain(parent.borrow().dom.iter().flatten().chain([d_oub]))
+							for (d_prev, d) in pre_dom
+								.iter()
+								.chain(parent.borrow().dom.iter())
+								.flatten()
+								.chain([oub_p])
 								.tuple_windows()
 							{
 								if d == 0 {
@@ -2948,24 +3124,12 @@ impl TotalizerEncoder {
 							}
 
 							// Derive C2 clauses
-							// we add out of bounds values to the end of the iterators, equal to 0 when no associated counting variable has been created
-							let a_oub = if weight_l > k && id_l > last_leaf {
-								k + 1
-							} else {
-								0
-							};
-							let b_oub = if weight_r > k && id_r > last_leaf {
-								k + 1
-							} else {
-								0
-							};
-							let c_oub = if weight_p > k { k + 1 } else { 0 };
 							for (a, a_next) in left
 								.borrow()
 								.dom
 								.iter()
 								.flatten()
-								.chain([a_oub])
+								.chain([oub_l])
 								.tuple_windows()
 							{
 								for (b, b_next) in right
@@ -2973,13 +3137,14 @@ impl TotalizerEncoder {
 									.dom
 									.iter()
 									.flatten()
-									.chain([b_oub])
+									.chain([oub_r])
 									.tuple_windows()
 								{
-									// we add 0 to the beginning of this iterator to include the case C^root_2(0, 0, 0)
-									for (c, c_next) in [0]
-										.into_iter()
-										.chain(parent.borrow().dom.iter().flatten().chain([c_oub]))
+									for (c, c_next) in pre_dom
+										.iter()
+										.chain(parent.borrow().dom.iter())
+										.flatten()
+										.chain([oub_p])
 										.tuple_windows()
 									{
 										if c_next == 0 {
@@ -3034,10 +3199,12 @@ impl TotalizerEncoder {
 							}
 						}
 
-						// PL: delete input constraints
-						if at_root {
-							// Before deleting anything we move all derived constraints to the core (we will need that for the subproofs)
+						// PL: delete unnecessary constraints
+						if at_root && cmp == &LimitComp::Equal {
+							// Move all derived constraints to the core (we will need that for the subproofs)
 							file = move_to_core(file, constraint_id.len());
+
+							// Delete input constraints
 							file = delete_constraint_input_leq(file, id, k, weight_p);
 							file = is_deleted(file, &constraint_id[0]);
 							if cmp == &LimitComp::Equal {
@@ -3046,15 +3213,24 @@ impl TotalizerEncoder {
 							}
 
 							// Delete reification constraints
-							for (d_prev, d) in [0, k, k + 1].into_iter().tuple_windows() {
+							for (d_prev, d) in pre_dom
+								.iter()
+								.chain(parent.borrow().dom.iter())
+								.flatten()
+								.chain([oub_p])
+								.tuple_windows()
+							{
+								if d == 0 {
+									continue;
+								}
 								file = delete_reif_left(file, id, d);
 								file = delete_reif_right(
 									file,
 									id,
+									&pre_dom.iter().chain(parent.borrow().dom.iter()).collect(),
 									d_prev,
 									d,
 									id_l,
-									&parent.borrow().dom,
 									&left.borrow().dom,
 									id_r,
 									&right.borrow().dom,
@@ -3062,6 +3238,7 @@ impl TotalizerEncoder {
 									leaves_r,
 									weight_l,
 									weight_r,
+									last_leaf,
 									k,
 								)
 							}
